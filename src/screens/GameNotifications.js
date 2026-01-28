@@ -17,11 +17,11 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
+import { useTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import { useSocket } from '../context/Socket';
-import { useTheme } from '../context/AuthProvider';
 
 const { width, height } = Dimensions.get('window');
 const scaleFont = size => size * PixelRatio.getFontScale();

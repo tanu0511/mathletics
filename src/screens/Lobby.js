@@ -982,6 +982,13 @@ export default function Lobby() {
                 id: opponent.id,
                 username: opponent.username,
                 rating: opponent.rating || 1000,
+                // ✅ Stats from backend
+                stats: opponent.stats || {
+                    wins: 0,
+                    losses: 0,
+                    winRate: 0,
+                    currentStreak: 0,
+                },
             };
 
             myMongoIdRef.current = myPlayerId;

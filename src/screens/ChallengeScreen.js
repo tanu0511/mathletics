@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSocket } from '../context/Socket';
+import CustomHeader from '../components/CustomHeader';
 
 const { width } = Dimensions.get('window');
 
@@ -71,7 +72,7 @@ export default function ChallengeFriends() {
       }
 
       const response = await fetch(
-        'http://43.204.167.118:3000/api/friend/my-friend-list',
+        'https://mataletics-backend.onrender.com/api/friend/my-friend-list',
         {
           method: 'GET',
           headers: {
@@ -227,26 +228,12 @@ export default function ChallengeFriends() {
 
   return (
     <Wrapper style={styles.container} {...wrapperProps}>
-      <StatusBar
-        translucent
-        backgroundColor="#000000"
-        barStyle="light-content"
-      />
-
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 40 }]}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.iconButton}>
-          <Icon name="caret-back-outline" size={22} color="#fff" />
-        </TouchableOpacity>
-
-        <Text style={styles.headerText}>Challenge Friends</Text>
-
-        <View style={{ width: 26 }} />
-      </View>
-
-      <View style={styles.headerLine} />
+      <CustomHeader
+        title="Challenge Friends"
+        onBack={() => navigation.goBack()}
+        style={{ marginTop: insets.top + 20 }}
+      />
 
       {/* Search Box */}
       <View style={styles.searchContainer}>
@@ -313,28 +300,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    marginTop: -40,
-  },
-  headerText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  iconButton: {
-    padding: 6,
-  },
-  headerLine: {
-    height: 1,
-    backgroundColor: '#fff',
-    marginHorizontal: 4,
-    marginBottom: 20,
-  },
+  // Header styles removed as CustomHeader is used
   searchContainer: {
     marginHorizontal: 20,
     marginBottom: 20,

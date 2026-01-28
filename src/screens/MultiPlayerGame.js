@@ -12,6 +12,8 @@ import {
   AppState,
   Alert,
   BackHandler,
+  ScrollView,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -32,6 +34,8 @@ import { initSound, playEffect, stopEffect } from '../utils/SoundManager';
 
 const { width, height } = Dimensions.get('window');
 const scaleFont = size => size * PixelRatio.getFontScale();
+
+const REACTIONS = ['', '', '🎯', '�', '�', '�', '⚡', '�'];
 
 const getMathSymbol = word => {
   const symbolMap = {
@@ -78,6 +82,8 @@ const MultiPlayerGame = () => {
   const [awaitingResult, setAwaitingResult] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [gameEnded, setGameEnded] = useState(false);
+  const [questionIndex, setQuestionIndex] = useState(1);
+  const [bonusText, setBonusText] = useState('');
 
   // Timer State
   const [minutes, setMinutes] = useState(Math.floor((timer ?? 60) / 60));
@@ -91,6 +97,16 @@ const MultiPlayerGame = () => {
   const [opponentScore, setOpponentScore] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const [skippedCount, setSkippedCount] = useState(0);
+  const [answerHistory, setAnswerHistory] = useState([]);
+  const [opponentEmoji, setOpponentEmoji] = useState(null);
+  const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
+  const [opponentHistory, setOpponentHistory] = useState([]); // ✅ Opponent History State
+
+  // ✅ RESULT MODAL STATE
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [resultData, setResultData] = useState(null);
+  const [resultFadeAnim] = useState(new Animated.Value(0));
+  const [resultScaleAnim] = useState(new Animated.Value(0.8));
 
   /* ================= REFS ================= */
   const socketRef = useRef(null);
@@ -108,6 +124,7 @@ const MultiPlayerGame = () => {
   // MongoDB ID refs
   const myMongoIdRef = useRef(myMongoId);
   const opponentMongoIdRef = useRef(opponent?.id);
+  const revScale = useRef(new Animated.Value(1)).current;
 
   /* ================= DIAGNOSTIC LOGGING ================= */
   useEffect(() => {
@@ -195,6 +212,19 @@ const MultiPlayerGame = () => {
     return () => backHandler.remove();
   }, [gameEnded]);
 
+  useEffect(() => {
+    if (isReverse) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(revScale, { toValue: 1.05, duration: 800, useNativeDriver: true }),
+          Animated.timing(revScale, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      revScale.setValue(1);
+    }
+  }, [isReverse]);
+
   /* ================= EFFECTS: USER & SOCKET ================= */
   useEffect(() => {
     AsyncStorage.getItem('userData')
@@ -269,6 +299,7 @@ const MultiPlayerGame = () => {
       setLoading(false);
       setFeedback(null);
       setAwaitingResult(false);
+      setQuestionIndex(prev => prev + 1);
     };
 
     const handleNextQuestion = data => {
@@ -281,6 +312,7 @@ const MultiPlayerGame = () => {
       setLoading(false);
       setFeedback(null);
       setAwaitingResult(false);
+      setQuestionIndex(prev => prev + 1);
 
       if (data.gameState && data.gameState.playerScores) {
         const pScores = data.gameState.playerScores;
@@ -319,6 +351,11 @@ const MultiPlayerGame = () => {
         console.log('✅ Updating opponent score to:', data.score);
         setOpponentScore(data.score);
         opponentScoreRef.current = data.score;
+
+        if (data.history && Array.isArray(data.history)) {
+          console.log("Opponent history synced:", data.history);
+          setOpponentHistory(data.history);
+        }
       }
     };
 
@@ -336,28 +373,40 @@ const MultiPlayerGame = () => {
 
       // ✅ NO need to emit game-ended here - server already knows
 
+      // ✅ SHOW MODAL INSTEAD OF NAVIGATING
       const attempts = correctAnswersRef.current + incorrectCountRef.current;
-      const acc =
-        attempts > 0
-          ? Math.round((correctAnswersRef.current / attempts) * 100)
-          : 0;
+      const acc = attempts > 0 ? Math.round((correctAnswersRef.current / attempts) * 100) : 0;
 
-      setTimeout(() => {
-        navigation.replace('MultiplayerResultScreen', {
-          totalScore: scoreRef.current,
-          correctCount: correctAnswersRef.current,
-          inCorrectCount: incorrectCountRef.current,
-          skippedQuestions: skippedCountRef.current,
-          correctPercentage: acc,
-          difficulty,
-          player2Id: opponentMongoIdRef.current || 'unknown',
-          opponentScore: opponentScoreRef.current,
-          durationSeconds: timer,
-          winner: data.winner,
-          players: data.players,
-          gameResults: data.gameResults,
-        });
-      }, 500);
+      // Determine result
+      let gameResult = 'draw';
+      if (scoreRef.current > (opponentScoreRef.current || 0)) gameResult = 'win';
+      else if (scoreRef.current < (opponentScoreRef.current || 0)) gameResult = 'lose';
+
+      setResultData({
+        gameResult,
+        totalScore: scoreRef.current,
+        opponentScore: opponentScoreRef.current || 0,
+        correctCount: correctAnswersRef.current,
+        inCorrectCount: incorrectCountRef.current,
+        skippedQuestions: skippedCountRef.current,
+        correctPercentage: acc,
+        durationSeconds: timer,
+        winner: data.winner
+      });
+      setShowResultModal(true);
+
+      Animated.parallel([
+        Animated.timing(resultFadeAnim, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.spring(resultScaleAnim, {
+          toValue: 1,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+      ]).start();
     };
 
 
@@ -382,26 +431,27 @@ const MultiPlayerGame = () => {
           {
             text: 'OK',
             onPress: () => {
-              const attempts =
-                correctAnswersRef.current + incorrectCountRef.current;
-              const acc =
-                attempts > 0
-                  ? Math.round((correctAnswersRef.current / attempts) * 100)
-                  : 0;
+              const attempts = correctAnswersRef.current + incorrectCountRef.current;
+              const acc = attempts > 0 ? Math.round((correctAnswersRef.current / attempts) * 100) : 0;
 
-              navigation.replace('MultiplayerResultScreen', {
+              setResultData({
+                gameResult: 'win', // Auto win on disconnect
                 totalScore: scoreRef.current,
+                opponentScore: opponentScoreRef.current || 0,
                 correctCount: correctAnswersRef.current,
                 inCorrectCount: incorrectCountRef.current,
                 skippedQuestions: skippedCountRef.current,
                 correctPercentage: acc,
-                difficulty,
-                player2Id: opponentMongoIdRef.current || 'unknown',
-                opponentScore: opponentScoreRef.current,
                 durationSeconds: timer,
                 opponentDisconnected: true,
                 winner: myMongoIdRef.current,
               });
+              setShowResultModal(true);
+
+              Animated.parallel([
+                Animated.timing(resultFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+                Animated.spring(resultScaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }),
+              ]).start();
             },
           },
         ],
@@ -412,6 +462,35 @@ const MultiPlayerGame = () => {
       Alert.alert('Error', data.message || 'An error occurred');
     };
 
+    const handleOpponentEmoji = data => {
+      console.log('😄 opponent-emoji-received:', data);
+      if (data.emoji) {
+        setOpponentEmoji(data.emoji);
+        // Clear previous timeout if exists (optional but good)
+        setTimeout(() => setOpponentEmoji(null), 3000);
+      }
+    };
+
+    const handleGracePeriod = data => {
+      console.log('⏳ game-in-grace-period:', data);
+      Alert.alert(
+        'Opponent Disconnected',
+        data.message || 'Waiting for opponent to reconnect...',
+      );
+      // Set a state to show a "Waiting..." banner?
+    };
+
+    const handleOpponentReconnected = data => {
+      console.log('♻️ opponent-reconnected:', data);
+      Alert.alert('Reconnected', data.message || 'Opponent has reconnected!');
+    };
+
+    const handleGracePeriodExpired = data => {
+      console.log('⏰ grace-period-expired:', data);
+      // Treat this like a disconnect win
+      handleOpponentDisconnected(data);
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
@@ -420,6 +499,11 @@ const MultiPlayerGame = () => {
     socket.on('opponent-score-update', handleOpponentScoreUpdate);
     socket.on('game-ended', handleGameEnded);
     socket.on('opponent-disconnected', handleOpponentDisconnected);
+    // ✅ NEW LISTENERS
+    socket.on('opponent-emoji-received', handleOpponentEmoji);
+    socket.on('game-in-grace-period', handleGracePeriod);
+    socket.on('grace-period-expired', handleGracePeriodExpired);
+    socket.on('opponent-reconnected', handleOpponentReconnected);
     socket.on('error', handleError);
 
     if (currentQuestion) {
@@ -430,6 +514,7 @@ const MultiPlayerGame = () => {
       );
       setCorrectAnswer(String(currentQuestion.answer));
       setLoading(false);
+      setQuestionIndex(1);
     }
 
     return () => {
@@ -441,6 +526,11 @@ const MultiPlayerGame = () => {
       socket.off('opponent-score-update', handleOpponentScoreUpdate);
       socket.off('game-ended', handleGameEnded);
       socket.off('opponent-disconnected', handleOpponentDisconnected);
+      // ✅ REMOVE LISTENERS
+      socket.off('opponent-emoji-received', handleOpponentEmoji);
+      socket.off('game-in-grace-period', handleGracePeriod);
+      socket.off('grace-period-expired', handleGracePeriodExpired);
+      socket.off('opponent-reconnected', handleOpponentReconnected);
       socket.off('error', handleError);
     };
   }, [
@@ -525,25 +615,30 @@ const MultiPlayerGame = () => {
       socketRef.current.emit('game-ended');
     }
 
+    // ✅ SHOW MODAL INSTEAD OF NAVIGATING
     const attempts = correctAnswersRef.current + incorrectCountRef.current;
-    const acc =
-      attempts > 0
-        ? Math.round((correctAnswersRef.current / attempts) * 100)
-        : 0;
+    const acc = attempts > 0 ? Math.round((correctAnswersRef.current / attempts) * 100) : 0;
 
-    setTimeout(() => {
-      navigation.replace('MultiplayerResultScreen', {
-        totalScore: scoreRef.current,
-        correctCount: correctAnswersRef.current,
-        inCorrectCount: incorrectCountRef.current,
-        skippedQuestions: skippedCountRef.current,
-        correctPercentage: acc,
-        difficulty,
-        player2Id: opponentMongoIdRef.current || 'unknown',
-        opponentScore: opponentScoreRef.current,
-        durationSeconds: timer,
-      });
-    }, 500);
+    let gameResult = 'draw';
+    if (scoreRef.current > (opponentScoreRef.current || 0)) gameResult = 'win';
+    else if (scoreRef.current < (opponentScoreRef.current || 0)) gameResult = 'lose';
+
+    setResultData({
+      gameResult,
+      totalScore: scoreRef.current,
+      opponentScore: opponentScoreRef.current || 0,
+      correctCount: correctAnswersRef.current,
+      inCorrectCount: incorrectCountRef.current,
+      skippedQuestions: skippedCountRef.current,
+      correctPercentage: acc,
+      durationSeconds: timer,
+    });
+    setShowResultModal(true);
+
+    Animated.parallel([
+      Animated.timing(resultFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(resultScaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }),
+    ]).start();
   };
 
   /* ================= REPLACE handleGameExit FUNCTION ================= */
@@ -576,6 +671,43 @@ const MultiPlayerGame = () => {
         playEffect('ticktock', true);
       }
     }
+  };
+
+  const handleToggleReactions = () => {
+    setIsReactionPickerOpen(prev => !prev);
+  };
+
+  const handleSelectReaction = emoji => {
+    setIsReactionPickerOpen(false);
+    if (socketRef.current && socketRef.current.connected) {
+      // ✅ Updated to match Front-End Guide
+      socketRef.current.emit('send-emoji', {
+        emoji,
+      });
+      // OPTIONAL: Show my own emoji locally too?
+    }
+  };
+
+  // ✅ NEW MODAL ACTIONS
+  const handleRematch = () => {
+    navigation.replace('WaitingForOpponent', {
+      challengedUser: {
+        username: opponent?.username || 'Opponent',
+        id: opponentMongoIdRef.current,
+        _id: opponentMongoIdRef.current,
+      },
+      diff: difficulty,
+      timer: timer,
+      symbol: currentQuestion?.symbol,
+    });
+  };
+
+  const handleNewGame = () => {
+    navigation.navigate('ChallengeScreen');
+  };
+
+  const handleCloseResults = () => {
+    navigation.navigate('BottomTab');
   };
 
   const handlePress = async value => {
@@ -615,6 +747,8 @@ const MultiPlayerGame = () => {
 
       console.log('⏭️ Skipping question');
 
+      setAnswerHistory(prev => [{ isCorrect: null }, ...prev].slice(0, 8));
+
       socketRef.current?.emit('submit-answer', {
         answer: null,
         playerId: myMongoIdRef.current,
@@ -633,6 +767,14 @@ const MultiPlayerGame = () => {
       const isCorrect = newInput === correctAnswer;
       setFeedback(isCorrect ? 'correct' : 'incorrect');
       playEffect(isCorrect ? 'correct' : 'incorrect', isSoundOnRef.current);
+
+      setAnswerHistory(prev => [{ isCorrect }, ...prev].slice(0, 8));
+
+      if (isCorrect) {
+        setBonusText('+4 Bonus');
+      } else {
+        setBonusText('');
+      }
 
       if (isCorrect) {
         scoreRef.current += 1;
@@ -659,30 +801,18 @@ const MultiPlayerGame = () => {
       setTimeout(() => {
         setAwaitingResult(false);
         if (feedback) setFeedback(null);
+        setBonusText('');
       }, 5000);
     }
   };
 
-  /* ================= LAYOUT HELPERS ================= */
   const getKeyButtonWidth = () => width * 0.2;
   const getKeyButtonHeight = () => height * 0.1;
 
-  /* ================= RENDER ================= */
   const Content = () => (
-    <SafeAreaView style={[styles.container, { paddingTop: insets.top + 30 }]}>
-      {!isConnected && (
-        <View style={styles.disconnectedBanner}>
-          <Text style={styles.disconnectedText}>
-            ⚠️ Disconnected from server
-          </Text>
-        </View>
-      )}
-
-      <View
-        style={[
-          styles.topBar,
-          { backgroundColor: theme.cardBackground || '#1E293B' },
-        ]}>
+    <View style={[styles.container, { paddingTop: insets.top + 30 }]}>
+      {/* 1. TOP BAR (Synced with MathInputScreen) */}
+      <View style={[styles.topBar, { backgroundColor: theme.cardBackground || '#1E293B' }]}>
         <TouchableOpacity
           onPress={() => {
             if (!gameEnded) {
@@ -691,19 +821,18 @@ const MultiPlayerGame = () => {
                 'Are you sure you want to leave? You will lose the match.',
                 [
                   { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Leave',
-                    style: 'destructive',
-                    onPress: handleGameExit,
-                  },
+                  { text: 'Leave', style: 'destructive', onPress: handleGameExit },
                 ],
               );
             } else {
+              stopEffect('ticktock');
               navigation.goBack();
             }
           }}
-          style={styles.iconButton}>
-          <Icon name="caret-back-outline" size={scaleFont(24)} color="#fff" />
+          style={styles.iconButton}
+          hitSlop={{ top: 50, bottom: 50, left: 50, right: 50 }}
+        >
+          <Icon name="caret-back-outline" size={24} color="#fff" />
         </TouchableOpacity>
 
         <View style={styles.timerContainer}>
@@ -713,164 +842,194 @@ const MultiPlayerGame = () => {
               styles.timerIcon,
               {
                 transform: [{ scale: animateWatch }],
-                tintColor:
-                  minutes * 60 + seconds <= 10 || isThirtySecPhase
-                    ? 'red'
-                    : '#fff',
-              },
+                tintColor: minutes * 60 + seconds <= 10 || isThirtySecPhase ? 'red' : '#fff'
+              }
             ]}
           />
-          <Text style={styles.timerText}>
-            {`${minutes}:${String(seconds).padStart(2, '0')}`}
+          <Text style={styles.timerText}>{`${minutes}:${seconds < 10 ? '0' : ''}${seconds}`}</Text>
+        </View>
+
+        <TouchableOpacity onPress={handleToggleSound} style={styles.iconButton1}>
+          <Icon name={isSoundOn ? 'volume-high' : 'volume-mute'} size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* 2. OPPONENT HEADER (Existing) */}
+      <View style={styles.opponentHeader}>
+        <View style={styles.headerLeft}>
+          <View style={styles.opponentAvatarContainer}>
+            <View style={[styles.avatarCircle, { backgroundColor: '#0F766E', width: 40, height: 40 }]}>
+              {opponent?.profilePic ? (
+                <Image source={{ uri: opponent.profilePic }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+              ) : (
+                <Text style={styles.avatarInitial}>
+                  {opponent?.username?.charAt(0).toUpperCase() || 'O'}
+                </Text>
+              )}
+            </View>
+            <View style={styles.onlineDot} />
+          </View>
+
+          <View style={styles.opponentInfo}>
+            <Text style={styles.opponentName} numberOfLines={1}>
+              {opponent?.username || 'Opponent'}
+            </Text>
+
+            <View style={styles.historyContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.historyScrollContent}
+              >
+                {opponentHistory.map((item, index) => {
+                  const isRight = typeof item === 'object' && item !== null ? item.isCorrect : item;
+                  return (
+                    <Icon
+                      key={index}
+                      name={isRight ? "checkmark" : "close"}
+                      size={16}
+                      color={isRight ? "#10B981" : "#EF4444"}
+                      style={{ marginRight: 4 }}
+                    />
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.headerRight}>
+          <Text style={styles.scoreLabel}>Pts</Text>
+          <Text style={styles.scoreValue}>{opponentScore}</Text>
+        </View>
+      </View>
+
+      {/* ⚠️ Disconnected Banner */}
+      {!isConnected && (
+        <View style={styles.disconnectedBanner}>
+          <Text style={styles.disconnectedText}>⚠️ Reconnecting...</Text>
+        </View>
+      )}
+
+      {/* 3. MY DATA (New Minimal "You" Section) */}
+      <View style={styles.myDataContainer}>
+        <View style={styles.headerLeft}>
+          <View style={styles.opponentAvatarContainer}>
+            <View style={[styles.avatarCircle, { width: 42, height: 42, backgroundColor: '#4F46E5' }]}>
+              {user?.profilePic ? (
+                <Image source={{ uri: user.profilePic }} style={{ width: 42, height: 42, borderRadius: 21 }} />
+              ) : (
+                <Text style={styles.avatarInitial}>{user?.username?.charAt(0).toUpperCase() || 'Y'}</Text>
+              )}
+            </View>
+            <View style={styles.youBadge}>
+              <Text style={styles.youBadgeText}>YOU</Text>
+            </View>
+          </View>
+
+          <View style={styles.opponentInfo}>
+            <Text style={styles.playerName} numberOfLines={1}>
+              {user?.username || 'You'}
+            </Text>
+
+            {/* My History */}
+            <View style={styles.historyContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.historyScrollContent}
+              >
+                {answerHistory.map((item, index) => (
+                  <Icon
+                    key={index}
+                    name={item.isCorrect === null ? "close" : (item.isCorrect ? "checkmark" : "close")}
+                    size={16}
+                    color={item.isCorrect === null ? "#FF6B6B" : (item.isCorrect ? "#10B981" : "#EF4444")}
+                    style={{ marginRight: 4 }}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.headerRight}>
+          <Text style={styles.scoreLabel}>Pts</Text>
+          <Text style={styles.scoreValue}>{score}</Text>
+        </View>
+      </View>
+
+
+      {/* 4. Question & Answer Area (Synced) */}
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
+        <Text style={styles.question}>{loading ? '...' : question}</Text>
+
+        <View style={[styles.answerBox, { backgroundColor: theme.cardBackground || '#1E293B' }, feedback === 'correct' ? { borderColor: 'green', borderWidth: 2 } : feedback === 'incorrect' ? { borderColor: 'red', borderWidth: 2 } : feedback === 'skipped' ? { borderColor: 'orange', borderWidth: 2 } : {}]}>
+          <Text style={[styles.answerText, feedback === 'correct' ? { color: 'green' } : feedback === 'incorrect' ? { color: 'red' } : feedback === 'skipped' ? { color: 'orange' } : {}]}>
+            {input || (feedback === 'correct' ? 'Correct' : feedback === 'incorrect' ? 'Incorrect' : feedback === 'skipped' ? 'Skipped' : '')}
           </Text>
         </View>
 
         <TouchableOpacity
-          onPress={handleToggleSound}
-          style={styles.iconButton1}>
-          <Icon
-            name={isSoundOn ? 'volume-high' : 'volume-mute'}
-            size={24}
-            color="#fff"
-          />
+          style={[styles.speechBubble, { position: 'absolute', right: width * 0.1, top: '40%' }]}
+          onPress={handleToggleReactions}
+          activeOpacity={0.8}
+        >
+          <Icon name="chatbubble-ellipses" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.question}>{loading ? 'Loading...' : question}</Text>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'center',
-          marginBottom: height * 0.04,
-        }}>
-        <View
-          style={[
-            styles.answerBox,
-            { backgroundColor: theme.cardBackground || '#1E293B' },
-            feedback === 'correct'
-              ? { borderColor: 'green', borderWidth: 2 }
-              : feedback === 'incorrect'
-                ? { borderColor: 'red', borderWidth: 2 }
-                : feedback === 'skipped'
-                  ? { borderColor: 'orange', borderWidth: 2 }
-                  : {},
-          ]}>
-          <Text
-            style={[
-              styles.answerText,
-              feedback === 'correct'
-                ? { color: 'green' }
-                : feedback === 'incorrect'
-                  ? { color: 'red' }
-                  : feedback === 'skipped'
-                    ? { color: 'orange' }
-                    : { color: theme.text || '#fff' },
-            ]}>
-            {input ||
-              (feedback
-                ? feedback.charAt(0).toUpperCase() + feedback.slice(1)
-                : '')}
-          </Text>
+      {isReactionPickerOpen && (
+        <View style={styles.reactionPanel}>
+          {REACTIONS.map((emoji, index) => (
+            <TouchableOpacity
+              key={index}
+              onPress={() => handleSelectReaction(emoji)}
+              style={styles.reactionItem}>
+              <Text style={styles.reactionText}>{emoji}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      </View>
+      )}
 
-      <View style={styles.statsRow}>
-        <View style={styles.statItem}>
-          <Text
-            style={[
-              styles.statLabel,
-              { color: theme.secondaryText || '#B0BEC5' },
-            ]}>
-            You
-          </Text>
-          <Text style={[styles.statValue, { color: theme.text || '#fff' }]}>
-            {score}
-          </Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text
-            style={[
-              styles.statLabel,
-              { color: theme.secondaryText || '#B0BEC5' },
-            ]}>
-            {opponent?.username || 'Opponent'}
-          </Text>
-          <Text style={[styles.statValue, { color: theme.text || '#fff' }]}>
-            {opponentScore}
-          </Text>
-        </View>
-      </View>
 
+      {/* 5. Keypad (Synced) */}
       <View style={styles.keypadContainer}>
         {currentLayout.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.keypadRow}>
             {row.map((item, index) => {
               const strItem = item.toString().toLowerCase();
-              const isSpecial = [
-                'clear',
-                'clr',
-                '⌫',
-                'del',
-                'ref',
-                'pm',
-                'skip',
-                '.',
-                'reverse',
-              ].includes(strItem);
-              const isSkip = strItem === 'skip';
+              const isSpecial = ['clear', 'clr', '⌫', 'del', 'ref', 'pm', 'skip', '.', 'reverse'].includes(strItem);
               const isNa = strItem === 'na';
 
-              if (isNa)
-                return (
-                  <View
-                    key={index}
-                    style={{
-                      width: getKeyButtonWidth(),
-                      height: getKeyButtonHeight(),
-                    }}
-                  />
-                );
+              if (isNa) return <View key={index} style={{ width: getKeyButtonWidth(), height: getKeyButtonHeight() }} />;
 
               let content;
               if (strItem === 'del' || strItem === '⌫') {
-                content = (
-                  <MaterialIcons name="backspace" size={24} color="#fff" />
-                );
+                content = <MaterialIcons name="backspace" size={24} color="#fff" />;
               } else if (strItem === 'ref' || strItem === 'reverse') {
                 content = (
-                  <Text style={[styles.keyText, { fontSize: scaleFont(16), fontWeight: '800', fontStyle: 'italic' }]}>REV</Text>
+                  <Text style={[styles.keyText, { fontSize: 16, fontWeight: '800', fontStyle: 'italic' }]}>REV</Text>
                 );
               } else if (strItem === 'pm') {
-                content = (
-                  <Text style={[styles.keyText, { color: '#fff' }]}>+/-</Text>
-                );
+                content = <Text style={[styles.keyText, { color: '#fff' }]}>+/-</Text>;
               } else if (strItem === 'clr' || strItem === 'clear') {
-                content = (
-                  <Text style={[styles.keyText, { color: '#fff' }]}>Clear</Text>
-                );
-              } else if (isSkip) {
+                content = <Text style={[styles.keyText, { color: '#fff' }]}>Clear</Text>;
+              } else if (strItem === 'skip') {
                 content = (
                   <View style={{ alignItems: 'center', flexDirection: 'row' }}>
-                    <Text style={[styles.keyText, { fontSize: scaleFont(14) }]}>
-                      Skip
-                    </Text>
+                    <Text style={[styles.keyText, { fontSize: 14 }]}>Skip</Text>
                     <MaterialIcons name="skip-next" size={24} color="#fff" />
                   </View>
                 );
               } else {
-                content = (
-                  <Text style={styles.keyText}>{item.toUpperCase()}</Text>
-                );
+                content = <Text style={styles.keyText}>{item.toUpperCase()}</Text>;
               }
 
               return (
                 <TouchableOpacity
                   key={index}
-                  onPress={() =>
-                    handlePress(strItem === 'ref' ? 'reverse' : item)
-                  }
+                  onPress={() => handlePress(strItem === 'ref' ? 'reverse' : item)}
                   disabled={gameEnded}
                   style={[
                     styles.keyButton,
@@ -880,35 +1039,37 @@ const MultiPlayerGame = () => {
                       borderBottomWidth: 4,
                       borderBottomColor: 'rgba(0,0,0,0.3)',
                     },
-                    isSpecial || strItem === '-' ? styles.specialKey : null,
-                    gameEnded && { opacity: 0.5 },
+                    (isSpecial || strItem === '-') ? styles.specialKey : null,
                     ((strItem === 'ref' || strItem === 'reverse') && isReverse) && {
-                      backgroundColor: theme.primary || '#FB923C',
-                      borderColor: theme.primary || '#FB923C',
                       borderBottomColor: 'rgba(0,0,0,0.5)',
                       borderWidth: 0,
                       borderBottomWidth: 4,
                       elevation: 10,
-                      shadowColor: theme.primary || '#FB923C',
+                      shadowColor: theme.primaryColor || '#595CFF',
                       shadowOffset: { width: 0, height: 4 },
                       shadowOpacity: 0.5,
                       shadowRadius: 8,
-                    }
-                  ]}>
-                  {!isSpecial && strItem !== '-' ? (
+                      transform: [{ scale: revScale }], // Using ref for animation
+                    },
+                    gameEnded && { opacity: 0.5 },
+                  ]}
+                >
+                  {(strItem === 'ref' || strItem === 'reverse') && isReverse ? (
                     <LinearGradient
-                      colors={
-                        theme.buttonGradient || [
-                          theme.primaryColor || '#595CFF',
-                          theme.secondaryColor || '#87AEE9',
-                        ]
-                      }
-                      style={styles.gradientButton}>
+                      colors={theme.buttonGradient || [theme.primaryColor || '#595CFF', theme.secondaryColor || '#87AEE9']}
+                      style={styles.gradientButton}
+                    >
+                      {content}
+                    </LinearGradient>
+                  ) : !isSpecial && strItem !== '-' ? (
+                    <LinearGradient
+                      colors={theme.buttonGradient || [theme.primaryColor || '#595CFF', theme.secondaryColor || '#87AEE9']}
+                      style={styles.gradientButton}
+                    >
                       {content}
                     </LinearGradient>
                   ) : (
-                    <View
-                      style={{ alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
                       {content}
                     </View>
                   )}
@@ -918,7 +1079,91 @@ const MultiPlayerGame = () => {
           </View>
         ))}
       </View>
-    </SafeAreaView>
+
+      {/* ✅ RESULT MODAL OVERLAY */}
+      {showResultModal && resultData && (
+        <View style={styles.modalOverlay}>
+          <Animated.View
+            style={[
+              styles.resultCard,
+              {
+                opacity: resultFadeAnim,
+                transform: [{ scale: resultScaleAnim }],
+                borderColor: resultData.gameResult === 'win' ? '#4ade80' : resultData.gameResult === 'lose' ? '#f87171' : '#fbbf24',
+              },
+            ]}
+          >
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={handleCloseResults} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                <Icon name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => console.log('Share')} hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}>
+                <Icon name="share-social-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.resultContent}>
+              <View style={[styles.resultBadge, { backgroundColor: resultData.gameResult === 'win' ? '#4ade80' : resultData.gameResult === 'lose' ? '#f87171' : '#fbbf24' }]}>
+                <Text style={styles.resultBadgeText}>
+                  {resultData.gameResult === 'win' ? 'VICTORY' : resultData.gameResult === 'lose' ? 'DEFEAT' : 'DRAW'}
+                </Text>
+              </View>
+
+              <Text style={[styles.resultTitle, { color: resultData.gameResult === 'win' ? '#4ade80' : resultData.gameResult === 'lose' ? '#f87171' : '#fbbf24' }]}>
+                {resultData.gameResult === 'win' ? 'You Won!' : resultData.gameResult === 'lose' ? 'You Lost!' : 'Draw!'}
+              </Text>
+
+              {/* ✅ Players Avatar Row */}
+              <View style={styles.modalPlayersContainer}>
+                {/* YOU */}
+                <View style={styles.modalPlayer}>
+                  <View style={[styles.avatarCircle, { width: 60, height: 60, backgroundColor: '#4F46E5', marginBottom: 8 }]}>
+                    {user?.profilePic ? (
+                      <Image source={{ uri: user.profilePic }} style={{ width: 60, height: 60, borderRadius: 30 }} />
+                    ) : (
+                      <Text style={[styles.avatarInitial, { fontSize: 24 }]}>{user?.username?.charAt(0).toUpperCase() || 'Y'}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.modalPlayerName}>You</Text>
+                  <Text style={[styles.mainScore, { fontSize: 28 }]}>{resultData.totalScore}</Text>
+                </View>
+
+                <View style={styles.vsContainer}>
+                  <Text style={styles.modalVsText}>VS</Text>
+                </View>
+
+                {/* OPPONENT */}
+                <View style={styles.modalPlayer}>
+                  <View style={[styles.avatarCircle, { width: 60, height: 60, backgroundColor: '#0F766E', marginBottom: 8 }]}>
+                    {opponent?.profilePic ? (
+                      <Image source={{ uri: opponent.profilePic }} style={{ width: 60, height: 60, borderRadius: 30 }} />
+                    ) : (
+                      <Text style={[styles.avatarInitial, { fontSize: 24 }]}>{opponent?.username?.charAt(0).toUpperCase() || 'O'}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.modalPlayerName}>{opponent?.username || 'Opponent'}</Text>
+                  <Text style={[styles.mainScore, { fontSize: 28 }]}>{resultData.opponentScore}</Text>
+                </View>
+              </View>
+
+              <Text style={{ fontSize: 40, marginTop: 10 }}>
+                {resultData.gameResult === 'win' ? '🏆' : resultData.gameResult === 'lose' ? '😥' : '🤝'}
+              </Text>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.actionButton, styles.rematchButton]} onPress={handleRematch}>
+                <Text style={styles.actionButtonText}>Rematch</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionButton, styles.newGameButton]} onPress={handleNewGame}>
+                <Text style={styles.actionButtonText}>New Game</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
+      )}
+    </View>
   );
 
   return theme.backgroundGradient ? (
@@ -937,29 +1182,27 @@ export default MultiPlayerGame;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  // ✅ TOP BAR (Synced with MathInputScreen)
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: width * 0.04,
-    paddingVertical: height * 0.02,
-    marginBottom: height * 0.03,
     borderBottomEndRadius: 15,
     borderBottomStartRadius: 15,
+    height: 60,
   },
   iconButton: {
-    width: width * 0.06,
-    height: width * 0.06,
-    borderRadius: 8,
+    width: width * 0.35,
+    height: width * 0.12,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   iconButton1: {
-    width: width * 0.06,
-    height: width * 0.06,
-    borderRadius: 8,
+    width: width * 0.35,
+    height: width * 0.12,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-end',
   },
   timerContainer: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   timerText: {
@@ -969,13 +1212,129 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   timerIcon: { width: 18, height: 18 },
+
+  // ✅ MULTIPLAYER SPECIFIC HEADER STYLES
+  opponentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    // Removed background/border as requested to match player section
+    marginHorizontal: width * 0.04,
+    marginTop: height * 0.01,
+    padding: 10,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  backButton: {
+    padding: 4,
+  },
+  opponentAvatarContainer: {
+    position: 'relative',
+  },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  opponentInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  opponentName: {
+    fontSize: scaleFont(14),
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  historyContainer: {
+    height: 20,
+    width: '100%',
+  },
+  historyScrollContent: {
+    alignItems: 'center',
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: 10,
+  },
+  scoreLabel: {
+    fontSize: scaleFont(10),
+    color: '#CBD5E1',
+    fontWeight: '600',
+  },
+  scoreValue: {
+    fontSize: scaleFont(18),
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  avatarCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 4,
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitial: {
+    color: '#fff',
+    fontSize: scaleFont(14),
+    fontWeight: '700',
+  },
+
+  // ✅ NEW: My Data Section (Matches Opponent Header)
+  // ✅ NEW: My Data Section (Minimal, no box)
+  myDataContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    // Removed background/border as requested
+    marginHorizontal: width * 0.04,
+    marginTop: height * 0.02,
+    marginBottom: height * 0.02,
+    padding: 10, // Keep padding for touch area/spacing
+  },
+  playerName: {
+    fontSize: scaleFont(16),
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 2,
+    letterSpacing: 0.5,
+  },
+  youBadge: {
+    position: 'absolute',
+    bottom: -8,
+    right: -10,
+    backgroundColor: '#F59E0B', // Amber color for visibility
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#0F172A',
+  },
+  youBadgeText: {
+    fontSize: 8,
+    color: '#000',
+    fontWeight: '900',
+  },
+
+  // ✅ QUESTION & ANSWER AREA (Synced with MathInputScreen)
   question: {
     fontSize: scaleFont(22),
     color: '#fff',
     textAlign: 'center',
-    marginTop: height * 0.05,
-    marginBottom: height * 0.02,
     fontWeight: 'bold',
+    marginBottom: 20,
   },
   answerBox: {
     width: width * 0.6,
@@ -985,37 +1344,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
-    marginBottom: '5%',
   },
   answerText: { fontSize: scaleFont(18), color: '#fff', fontWeight: '600' },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: height * 0.02,
-    paddingHorizontal: width * 0.1,
+
+  // ✅ KEYPAD (Synced with MathInputScreen)
+  keypadContainer: {
+    width: '100%',
+    paddingBottom: height * 0.02,
   },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: scaleFont(12),
-    fontWeight: '600',
-    opacity: 0.8,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: scaleFont(20),
-    fontWeight: 'bold',
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    marginHorizontal: 20,
-  },
-  keypadContainer: { width: '100%', marginTop: 'auto', marginBottom: 20 },
   keypadRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1023,8 +1359,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: width * 0.05,
   },
   keyButton: {
-    width: width * 0.2,
-    height: height * 0.1,
+    width: width * 0.2, // Will be overridden dynamically
+    height: height * 0.1, // Will be overridden dynamically
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 10,
@@ -1039,4 +1375,167 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   keyText: { fontSize: scaleFont(18), color: '#fff', fontWeight: '600' },
+
+  // ✅ EXTRAS
+  disconnectedBanner: {
+    backgroundColor: '#EF4444',
+    padding: 4,
+    alignItems: 'center',
+    marginHorizontal: width * 0.04,
+    marginTop: 8,
+    borderRadius: 4,
+  },
+  disconnectedText: {
+    color: '#fff',
+    fontSize: scaleFont(12),
+    fontWeight: '600',
+  },
+  reactionPanel: {
+    position: 'absolute',
+    right: width * 0.08,
+    top: height * 0.17,
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: width * 0.6,
+    zIndex: 20,
+    elevation: 8,
+  },
+  reactionItem: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  reactionText: {
+    fontSize: scaleFont(18),
+  },
+
+  // ✅ MODAL STYLES
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  resultCard: {
+    width: '90%',
+    backgroundColor: '#111827',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 2,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  resultContent: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  resultBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 10,
+  },
+  resultBadgeText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+  resultTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  playersRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginVertical: 20,
+    paddingHorizontal: 20,
+  },
+  playerSide: {
+    alignItems: 'center',
+  },
+  labelTitle: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+  mainScore: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  vsText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#64748b',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 20,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  rematchButton: {
+    backgroundColor: '#8B5CF6',
+  },
+  newGameButton: {
+    backgroundColor: '#3B82F6',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+
+  // ✅ NEW MODAL SUB-COMPONENTS
+  modalPlayersContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 10,
+    marginVertical: 15,
+  },
+  modalPlayer: {
+    alignItems: 'center',
+    width: '35%',
+  },
+  modalPlayerName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 5,
+    textAlign: 'center',
+  },
+  vsContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalVsText: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
 });

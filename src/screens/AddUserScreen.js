@@ -80,9 +80,8 @@ const AddUserScreen = () => {
         setLoading(false);
         return;
       }
-
       const response = await axios.get(
-        'http://43.204.167.118:3000/api/friend/my-friend-list',
+        'https://mataletics-backend.onrender.com/api/friend/my-friend-list',
         {
           headers: {
             Authorization: `Bearer ${token}`,

@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +18,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { useSocket } from '../context/Socket';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 const { width, height } = Dimensions.get('window');
 const scale = size => (width / 375) * size;
@@ -26,6 +29,7 @@ const MultiplayerResultScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const socket = useSocket();
 
   // State
   const [gameResult, setGameResult] = useState(null); // 'win', 'lose', or 'draw'
@@ -33,10 +37,16 @@ const MultiplayerResultScreen = ({ route }) => {
   const [user, setUser] = useState(null);
   const [authToken, setAuthToken] = useState(null);
 
+  // ✅ REMATCH STATE
+  const [rematchRequested, setRematchRequested] = useState(false);
+  const [rematchAccepted, setRematchAccepted] = useState(false);
+  const [opponentName, setOpponentName] = useState('Opponent');
+
   // Modal State
   const [showModal, setShowModal] = useState(true);
 
   const hasSubmittedRef = useRef(false);
+  const socketRef = useRef(socket);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -52,6 +62,7 @@ const MultiplayerResultScreen = ({ route }) => {
     inCorrectCount,
     skippedQuestions,
     correctPercentage,
+    opponentUsername,
   } = route.params;
 
   /* ================= GET LOGIN DATA ================= */
@@ -63,13 +74,118 @@ const MultiplayerResultScreen = ({ route }) => {
         const parsedUser = storedUser ? JSON.parse(storedUser) : null;
         setUser(parsedUser);
         setAuthToken(storedToken);
+        if (opponentUsername) {
+          setOpponentName(opponentUsername);
+        }
       } catch (err) {
         console.log('AsyncStorage Error:', err?.message);
         setIsProcessing(false);
       }
     };
     getLoginData();
-  }, []);
+  }, [opponentUsername]);
+
+  /* ================= REMATCH SOCKET LISTENERS ================= */
+  useEffect(() => {
+    if (!socket) return;
+    socketRef.current = socket;
+
+    // ✅ LISTEN FOR REMATCH REQUEST FROM OPPONENT
+    const handleRematchRequest = data => {
+      console.log('🔄 Rematch request received:', data);
+      Alert.alert(
+        'Rematch Request',
+        `${data.opponentName || 'Your opponent'} wants a rematch!`,
+        [
+          { text: 'Decline', style: 'cancel' },
+          {
+            text: 'Accept',
+            onPress: () => handleAcceptRematch(data),
+          },
+        ],
+      );
+    };
+
+    // ✅ LISTEN FOR REMATCH ACCEPTED
+    const handleRematchAccepted = data => {
+      console.log('✅ Rematch accepted by opponent');
+      setRematchAccepted(true);
+      Alert.alert(
+        'Rematch Accepted!',
+        'Starting new match with same opponent...',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.replace('MultiPlayerGame', {
+                opponent: {
+                  id: player2Id,
+                  username: opponentName,
+                },
+                difficulty: route.params.difficulty || 'medium',
+                timer: route.params.timer || 60,
+                myMongoId: user?.id || user?._id,
+              });
+            },
+          },
+        ],
+      );
+    };
+
+    // ✅ LISTEN FOR REMATCH DECLINED
+    const handleRematchDeclined = data => {
+      console.log('❌ Rematch declined by opponent');
+      Alert.alert(
+        'Rematch Declined',
+        'Your opponent declined the rematch request.',
+      );
+      setRematchRequested(false);
+    };
+
+    socket.on('rematch-request', handleRematchRequest);
+    socket.on('rematch-accepted', handleRematchAccepted);
+    socket.on('rematch-declined', handleRematchDeclined);
+
+    return () => {
+      socket.off('rematch-request', handleRematchRequest);
+      socket.off('rematch-accepted', handleRematchAccepted);
+      socket.off('rematch-declined', handleRematchDeclined);
+    };
+  }, [socket, player2Id, opponentName, user, navigation, route.params]);
+
+  const handleAcceptRematch = data => {
+    console.log('✅ Accepting rematch');
+    socketRef.current?.emit('rematch-accept', {
+      toPlayerId: data.fromPlayerId,
+      playerName: user?.username || 'Player',
+    });
+
+    setRematchAccepted(true);
+    navigation.replace('MultiPlayerGame', {
+      opponent: {
+        id: data.fromPlayerId,
+        username: data.opponentName,
+      },
+      difficulty: route.params.difficulty || 'medium',
+      timer: route.params.timer || 60,
+      myMongoId: user?.id || user?._id,
+    });
+  };
+
+  // ✅ UPDATED REMATCH LOGIC: Navigate to Waiting Screen which sends challenge
+  const handleRequestRematch = () => {
+    // Navigate to WaitingForOpponent which handles sending the challenge
+    navigation.replace('WaitingForOpponent', {
+      challengedUser: {
+        username: opponentName,
+        id: player2Id, // The WaitingForOpponent needs this structure
+        _id: player2Id,
+      },
+      diff: route.params.difficulty,
+      timer: route.params.durationSeconds || route.params.timer || 60, // Ensure timer is passed
+      symbol: route.params.symbol, // Pass if available
+    });
+  };
 
   /* ================= RESULT API ================= */
   useEffect(() => {
@@ -138,7 +254,7 @@ const MultiplayerResultScreen = ({ route }) => {
   const getResultMessage = () => {
     switch (gameResult) {
       case 'win':
-        return 'You Win!'
+        return 'You Win!';
       case 'lose':
         return 'You Lose!';
       case 'draw':
@@ -165,127 +281,250 @@ const MultiplayerResultScreen = ({ route }) => {
 
   return (
     <View style={styles.mainContainer}>
-      {/* 1. BACKGROUND: ORIGINAL STATS PAGE */}
       <LinearGradient
         colors={theme.backgroundGradient || ['#0B1220', '#0B1220']}
         style={styles.background}
       />
 
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { marginTop: insets.top }]}>
-        <Text
-          style={[
-            styles.title,
-            { color: getResultColor() },
-          ]}>
-          {getResultTitle()}
-        </Text>
-
-        {/* ✅ Draw Badge (only shown when draw) */}
-        {gameResult === 'draw' && (
-          <View style={styles.drawBadge}>
-            <Text style={styles.drawBadgeText}>🤝 DRAW MATCH</Text>
-          </View>
-        )}
-
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: theme.cardBackground || '#1f2937' },
-          ]}>
-          <Text style={styles.label}>Your Score</Text>
-          <Text style={styles.value}>{totalScore}</Text>
-        </View>
-
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: theme.cardBackground || '#1f2937' },
-          ]}>
-          <Text style={styles.label}>Opponent Score</Text>
-          <Text style={styles.value}>{opponentScore}</Text>
-        </View>
-
-        {/* ✅ Show score difference or "Equal" for draw */}
-        <View
-          style={[
-            styles.scoreBox,
-            {
-              backgroundColor: theme.cardBackground || '#1f2937',
-              borderWidth: 2,
-              borderColor: getResultColor(),
-            },
-          ]}>
-          <Text style={styles.label}>Score Difference</Text>
-          <Text style={[styles.value, { color: getResultColor() }]}>
-            {gameResult === 'draw'
-              ? 'Equal'
-              : `${Math.abs(totalScore - opponentScore)}`}
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: theme.cardBackground || '#1f2937' },
-          ]}>
-          <Text style={styles.label}>Correct Answers</Text>
-          <Text style={styles.value}>{correctCount || 0}</Text>
-        </View>
-
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: theme.cardBackground || '#1f2937' },
-          ]}>
-          <Text style={styles.label}>Incorrect Answers</Text>
-          <Text style={styles.value}>{inCorrectCount || 0}</Text>
-        </View>
-
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: theme.cardBackground || '#1f2937' },
-          ]}>
-          <Text style={styles.label}>Skipped</Text>
-          <Text style={styles.value}>{skippedQuestions || 0}</Text>
-        </View>
-
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: theme.cardBackground || '#1f2937' },
-          ]}>
-          <Text style={styles.label}>Accuracy</Text>
-          <Text style={styles.value}>{correctPercentage || 0}%</Text>
-        </View>
-
-        {/* New Game Button */}
-        <LinearGradient
-          colors={[theme.primary || '#f97316', theme.primary || '#f97316']}
-          style={styles.newGameBtn}>
+      {/* ✅ NEW FULL SCREEN MODAL-LIKE UI */}
+      <View style={styles.newModalContainer}>
+        {/* Top Header: Close & Share */}
+        <View style={styles.modalHeader}>
           <TouchableOpacity
-            onPress={() =>
-              navigation.navigate('PlayGame', { gametype: 'MULTIPLAYER' })
-            }
-            style={{ width: '100%', alignItems: 'center' }}>
-            <Text style={styles.newGameText}>Play Again</Text>
+            onPress={() => navigation.navigate('BottomTab')}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Icon name="close" size={28} color="#fff" />
           </TouchableOpacity>
-        </LinearGradient>
 
-        {/* Home Button */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate('BottomTab')}
-          style={[
-            styles.homeBtn,
-            { backgroundColor: theme.cardBackground || '#052757ff' },
-          ]}>
-          <Text style={styles.homeText}>Home</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity
+            onPress={() => console.log('Share pressed')}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Icon name="share-social-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Center Content: Result */}
+        <View style={styles.newResultContent}>
+          <View
+            style={[styles.resultBadge, { backgroundColor: getResultColor(), marginTop: 40 }]}
+          >
+            <Text style={styles.resultBadgeText}>
+              {gameResult === 'win'
+                ? 'VICTORY'
+                : gameResult === 'lose'
+                  ? 'DEFEAT'
+                  : 'DRAW'}
+            </Text>
+          </View>
+
+          <Text style={[styles.resultTitle, { color: getResultColor(), fontSize: 32 }]}>
+            {gameResult === 'win' ? 'You Won!' : gameResult === 'lose' ? 'You Lost!' : 'Draw!'}
+          </Text>
+          <Text style={{ fontSize: 60, marginTop: 20 }}>{getResultEmoji()}</Text>
+
+          <View style={[styles.playersRow, { marginTop: 40, justifyContent: 'space-around' }]}>
+            {/* Player */}
+            <View style={styles.playerSide}>
+              <View style={styles.playerHeader}>
+                <Text style={styles.starIcon}>⭐</Text>
+                <Text style={styles.labelTitle}>YOU</Text>
+              </View>
+              <Text
+                style={[
+                  styles.mainScore,
+                  gameResult === 'win' && { color: '#4ade80' },
+                  gameResult === 'draw' && { color: '#fbbf24' },
+                ]}>
+                {totalScore}
+              </Text>
+            </View>
+
+            {/* VS Badge */}
+            <View
+              style={[
+                styles.vsBadge,
+                gameResult === 'draw' && {
+                  backgroundColor: '#fbbf24',
+                  borderColor: '#fbbf24',
+                },
+              ]}>
+              <Text style={styles.vsText}>
+                {gameResult === 'draw' ? '=' : 'VS'}
+              </Text>
+            </View>
+
+            {/* Opponent */}
+            <View style={styles.opponentSide}>
+              <View style={styles.playerHeader}>
+                <Text style={styles.labelTitle}>OPPONENT</Text>
+              </View>
+              <Text
+                style={[
+                  styles.mainScore,
+                  gameResult === 'lose' && { color: '#f87171' },
+                  gameResult === 'draw' && { color: '#fbbf24' },
+                ]}>
+                {opponentScore}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Bottom Buttons */}
+        <View style={styles.bottomButtonsContainer}>
+          {/* Rematch Button */}
+          <TouchableOpacity
+            style={[styles.actionButton, styles.rematchButton]}
+            onPress={handleRequestRematch}
+          >
+            <Text style={styles.actionButtonText}>Rematch</Text>
+          </TouchableOpacity>
+
+          {/* New Game Button */}
+          <TouchableOpacity
+            style={[styles.actionButton, styles.newGameButton]}
+            onPress={() => navigation.navigate('ChallengeScreen')}
+          >
+            <Text style={styles.actionButtonText}>New Game</Text>
+          </TouchableOpacity>
+        </View>
+
+      </View>
+
+      {/* OLD UI HIDDEN */}
+      {false && (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { marginTop: insets.top }]}>
+          <Text style={[styles.title, { color: getResultColor() }]}>
+            {getResultTitle()}
+          </Text>
+
+          {/* ✅ Draw Badge (only shown when draw) */}
+          {gameResult === 'draw' && (
+            <View style={styles.drawBadge}>
+              <Text style={styles.drawBadgeText}>🤝 DRAW MATCH</Text>
+            </View>
+          )}
+
+          <View
+            style={[
+              styles.scoreBox,
+              { backgroundColor: theme.cardBackground || '#1f2937' },
+            ]}>
+            <Text style={styles.label}>Your Score</Text>
+            <Text style={styles.value}>{totalScore}</Text>
+          </View>
+
+          <View
+            style={[
+              styles.scoreBox,
+              { backgroundColor: theme.cardBackground || '#1f2937' },
+            ]}>
+            <Text style={styles.label}>Opponent Score</Text>
+            <Text style={styles.value}>{opponentScore}</Text>
+          </View>
+
+          {/* ✅ Show score difference or "Equal" for draw */}
+          <View
+            style={[
+              styles.scoreBox,
+              {
+                backgroundColor: theme.cardBackground || '#1f2937',
+                borderWidth: 2,
+                borderColor: getResultColor(),
+              },
+            ]}>
+            <Text style={styles.label}>Score Difference</Text>
+            <Text style={[styles.value, { color: getResultColor() }]}>
+              {gameResult === 'draw'
+                ? 'Equal'
+                : `${Math.abs(totalScore - opponentScore)}`}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.scoreBox,
+              { backgroundColor: theme.cardBackground || '#1f2937' },
+            ]}>
+            <Text style={styles.label}>Correct Answers</Text>
+            <Text style={styles.value}>{correctCount || 0}</Text>
+          </View>
+
+          <View
+            style={[
+              styles.scoreBox,
+              { backgroundColor: theme.cardBackground || '#1f2937' },
+            ]}>
+            <Text style={styles.label}>Incorrect Answers</Text>
+            <Text style={styles.value}>{inCorrectCount || 0}</Text>
+          </View>
+
+          <View
+            style={[
+              styles.scoreBox,
+              { backgroundColor: theme.cardBackground || '#1f2937' },
+            ]}>
+            <Text style={styles.label}>Skipped</Text>
+            <Text style={styles.value}>{skippedQuestions || 0}</Text>
+          </View>
+
+          <View
+            style={[
+              styles.scoreBox,
+              { backgroundColor: theme.cardBackground || '#1f2937' },
+            ]}>
+            <Text style={styles.label}>Accuracy</Text>
+            <Text style={styles.value}>{correctPercentage || 0}%</Text>
+          </View>
+
+          {/* New Game Button */}
+          <LinearGradient
+            colors={[theme.primary || '#f97316', theme.primary || '#f97316']}
+            style={styles.newGameBtn}>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('PlayGame', { gametype: 'MULTIPLAYER' })
+              }
+              style={{ width: '100%', alignItems: 'center' }}>
+              <Text style={styles.newGameText}>Play Again (New Opponent)</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+
+          {/* ✅ REMATCH BUTTON */}
+          <LinearGradient
+            colors={['#8B5CF6', '#7C3AED']}
+            style={styles.rematchBtn}>
+            <TouchableOpacity
+              onPress={handleRequestRematch}
+              disabled={rematchRequested || rematchAccepted}
+              style={{ width: '100%', alignItems: 'center' }}>
+              <Text style={styles.rematchText}>
+                {rematchRequested
+                  ? '⏳ Waiting for response...'
+                  : rematchAccepted
+                    ? '✓ Rematch Starting...'
+                    : '🔄 Rematch with Same Opponent'}
+              </Text>
+            </TouchableOpacity>
+          </LinearGradient>
+
+          {/* Home Button */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BottomTab')}
+            style={[
+              styles.homeBtn,
+              { backgroundColor: theme.cardBackground || '#052757ff' },
+            ]}>
+            <Text style={styles.homeText}>Home</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
 
       {/* 2. OVERLAY MODAL: PREMIUM CARD */}
-      {showModal && (
+      {false && showModal && (
         <View style={styles.modalOverlay}>
           <Animated.View
             style={[
@@ -299,10 +538,7 @@ const MultiplayerResultScreen = ({ route }) => {
             ]}>
             {/* ✅ Result Badge at Top */}
             <View
-              style={[
-                styles.resultBadge,
-                { backgroundColor: getResultColor() },
-              ]}>
+              style={[styles.resultBadge, { backgroundColor: getResultColor() }]}>
               <Text style={styles.resultBadgeText}>
                 {gameResult === 'win'
                   ? 'VICTORY'
@@ -372,10 +608,7 @@ const MultiplayerResultScreen = ({ route }) => {
               <View style={styles.scoreDiffContainer}>
                 <Text style={styles.scoreDiffLabel}>Score Difference</Text>
                 <Text
-                  style={[
-                    styles.scoreDiffValue,
-                    { color: getResultColor() },
-                  ]}>
+                  style={[styles.scoreDiffValue, { color: getResultColor() }]}>
                   {Math.abs(totalScore - opponentScore)} points
                 </Text>
               </View>
@@ -398,10 +631,7 @@ const MultiplayerResultScreen = ({ route }) => {
 
             {/* OK Button - Closes Modal */}
             <TouchableOpacity
-              style={[
-                styles.okButton,
-                { backgroundColor: getResultColor() },
-              ]}
+              style={[styles.okButton, { backgroundColor: getResultColor() }]}
               onPress={() => setShowModal(false)}>
               <Text style={styles.okButtonText}>Continue</Text>
             </TouchableOpacity>
@@ -625,4 +855,60 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   okButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // ✅ REMATCH BUTTON STYLES
+  rematchBtn: {
+    width: '80%',
+    borderRadius: 30,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  rematchText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // ✅ NEW MODAL STYLES
+  newModalContainer: {
+    flex: 1,
+    paddingTop: 50,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  newResultContent: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  bottomButtonsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    gap: 15,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rematchButton: {
+    backgroundColor: '#8B5CF6',
+  },
+  newGameButton: {
+    backgroundColor: '#3B82F6',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });

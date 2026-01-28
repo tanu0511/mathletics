@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,21 +9,21 @@ import {
   ScrollView,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import {Search, Users, Cpu} from 'lucide-react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
-import {useTheme} from '../context/ThemeContext';
+import { Search, Users, Cpu } from 'lucide-react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { useTheme } from '../context/ThemeContext';
 import CustomHeader from '../components/CustomHeader';
 import Icon from 'react-native-vector-icons/Ionicons';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const {width} = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 export default function SelectOpponent() {
   const navigation = useNavigation();
   const route = useRoute();
-  const {theme} = useTheme();
+  const { theme } = useTheme();
 
-  const {gameConfig, preSelectedOpponent} = route.params || {};
+  const { gameConfig, preSelectedOpponent } = route.params || {};
 
   const [currentScreen, setCurrentScreen] = useState('select');
   const [selectedOpponent, setSelectedOpponent] = useState(
@@ -73,8 +73,8 @@ export default function SelectOpponent() {
 
   const Wrapper = theme.backgroundGradient ? LinearGradient : View;
   const wrapperProps = theme.backgroundGradient
-    ? {colors: theme.backgroundGradient}
-    : {style: {backgroundColor: theme.background || '#0B1220'}};
+    ? { colors: theme.backgroundGradient }
+    : { style: { backgroundColor: theme.background || '#0B1220' } };
 
   return (
     <Wrapper style={styles.container} {...wrapperProps}>
@@ -85,7 +85,7 @@ export default function SelectOpponent() {
         setCurrentScreen={setCurrentScreen}
         navigateBack={navigateBack}
         handleDifficultySelect={handleDifficultySelect}
-        navigateToLobbyForRandom={navigateToLobbyForRandom} 
+        navigateToLobbyForRandom={navigateToLobbyForRandom}
         navigation={navigation}
         gameConfig={gameConfig}
       />
@@ -101,17 +101,25 @@ function ScreenContent({
   setSelectedOpponent,
   setCurrentScreen,
   navigateBack,
-  handleDifficultySelect,
-  navigateToLobbyForRandom,
   navigation,
   gameConfig,
 }) {
   const insets = useSafeAreaInsets();
+  const route = useRoute(); // ✅ Fix: Access route directly via hook
+
+  const handleSelection = (opponentType) => {
+    setSelectedOpponent(opponentType);
+    navigation.navigate('PlayGame', {
+      selectedOpponent: opponentType,
+      gametype: route.params?.gametype
+    });
+  };
+
   return (
     <>
       {/* ================= SELECT OPPONENT ================= */}
       {currentScreen === 'select' && (
-        <View style={[styles.screenContainer, {paddingTop: insets.top + 30}]}>
+        <View style={[styles.screenContainer, { paddingTop: insets.top + 30 }]}>
           <CustomHeader title="Select Opponent" onBack={navigateBack} />
 
           <View style={styles.content}>
@@ -120,10 +128,7 @@ function ScreenContent({
               subtitle="Match with any available player"
               icon={<Users size={32} color="#f8630dff" />}
               selected={selectedOpponent === 'Random'}
-              onPress={() => {
-                setSelectedOpponent('Random');
-                navigateToLobbyForRandom(); // ✅ direct lobby
-              }}
+              onPress={() => handleSelection('Random')}
             />
 
             <OpponentCard
@@ -131,10 +136,7 @@ function ScreenContent({
               subtitle="Play against AI"
               icon={<Cpu size={32} color="#4ade80" />}
               selected={selectedOpponent === 'Computer'}
-              onPress={() => {
-                setSelectedOpponent('Computer');
-                setCurrentScreen('difficulty'); // ✅ level screen only for computer
-              }}
+              onPress={() => handleSelection('Computer')}
             />
 
             <OpponentCard
@@ -142,44 +144,17 @@ function ScreenContent({
               subtitle="Search and challenge friends"
               icon={<Search size={32} color="#ffd700" />}
               selected={selectedOpponent === 'Friends'}
-              onPress={() => {
-                setSelectedOpponent('Friends');
-                navigation.navigate('ChallengeFriends', {
-                  gameConfig: gameConfig,
-                });
-              }}
+              onPress={() => handleSelection('Friends')}
             />
           </View>
         </View>
       )}
 
-      {/* ================= DIFFICULTY (ROW DESIGN) ================= */}
+      {/* ================= DIFFICULTY (ROW DESIGN) - KEPT FOR REFERENCE IF NEEDED, BUT CURRENTLY UNUSED AS WE RETURN TO PLAYGAME ================= */}
       {currentScreen === 'difficulty' && (
-        <View style={[styles.screenContainer, {paddingTop: insets.top + 30}]}>
+        <View style={[styles.screenContainer, { paddingTop: insets.top + 30 }]}>
           <CustomHeader title="Choose Level" onBack={navigateBack} />
-
-          <ScrollView
-            contentContainerStyle={styles.levelList}
-            showsVerticalScrollIndicator={false}>
-            {[...Array(10)].map((_, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.levelRow}
-                onPress={() => handleDifficultySelect(i + 1)}>
-                <View style={styles.levelCircle}>
-                  <Text style={styles.levelCircleText}>{i + 1}</Text>
-                </View>
-
-                <Text style={styles.levelText}>Level {i + 1}</Text>
-
-                <Icon
-                  name="chevron-forward-outline"
-                  size={22}
-                  color="#90caf9"
-                />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {/* If we wanted to handle difficulty here, we would pass it back to PlayGame too. For now, ignoring as PlayGame has difficulty. */}
         </View>
       )}
     </>
@@ -190,7 +165,7 @@ function ScreenContent({
 
 /* ================= CARD ================= */
 
-const OpponentCard = ({title, subtitle, icon, selected, onPress}) => (
+const OpponentCard = ({ title, subtitle, icon, selected, onPress }) => (
   <TouchableOpacity
     onPress={onPress}
     style={[
@@ -202,8 +177,8 @@ const OpponentCard = ({title, subtitle, icon, selected, onPress}) => (
     ]}>
     <View style={styles.cardContent}>
       <View style={styles.iconCircle}>{icon}</View>
-      <View style={{flex: 1}}>
-        <Text style={[styles.cardTitle, selected && {fontWeight: 'bold'}]}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.cardTitle, selected && { fontWeight: 'bold' }]}>
           {title}
         </Text>
         <Text style={styles.cardSubtitle}>{subtitle}</Text>
@@ -215,8 +190,8 @@ const OpponentCard = ({title, subtitle, icon, selected, onPress}) => (
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  container: {flex: 1},
-  screenContainer: {flex: 1},
+  container: { flex: 1 },
+  screenContainer: { flex: 1 },
 
   header: {
     flexDirection: 'row',
@@ -226,8 +201,8 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     marginTop: -40,
   },
-  headerText: {color: '#fff', fontSize: 22, fontWeight: '700'},
-  iconButton: {padding: 6},
+  headerText: { color: '#fff', fontSize: 22, fontWeight: '700' },
+  iconButton: { padding: 6 },
 
   headerLine: {
     height: 1,
@@ -236,7 +211,7 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-  content: {flex: 1, padding: 20},
+  content: { flex: 1, padding: 20 },
 
   card: {
     borderRadius: 16,
@@ -244,7 +219,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: 'rgba(92, 19, 237, 0.05)',
   },
-  cardContent: {flexDirection: 'row', alignItems: 'center'},
+  cardContent: { flexDirection: 'row', alignItems: 'center' },
   iconCircle: {
     width: 60,
     height: 60,
@@ -254,8 +229,8 @@ const styles = StyleSheet.create({
     marginRight: 16,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  cardTitle: {fontSize: 18, color: '#fff', marginBottom: 4},
-  cardSubtitle: {fontSize: 14, color: '#90caf9'},
+  cardTitle: { fontSize: 18, color: '#fff', marginBottom: 4 },
+  cardSubtitle: { fontSize: 14, color: '#90caf9' },
 
   /* ===== LEVEL ROW DESIGN ===== */
 

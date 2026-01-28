@@ -429,48 +429,27 @@ const Home = () => {
 
   const Content = () => (
     <View style={[styles.contentContainer, { paddingTop: insets.top + 30 }]}>
-      <View style={styles.iconGrid}>
-        <View style={styles.iconColumn}>
-          <TouchableOpacity onPress={() => navigation.navigate('CommingSoon')}>
-            <Image
-              source={require('../assets/funcation.png')}
-              style={styles.gridIcon}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('ProfileScreen')}>
-            <Image
-              source={require('../assets/profile.png')}
-              style={styles.gridIcon}
-            />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => navigation.navigate('CommingSoon')}>
+          <Image
+            source={require('../assets/funcation.png')}
+            style={styles.gridIcon}
+          />
+        </TouchableOpacity>
 
-        <View style={styles.iconColumn}>
-          <TouchableOpacity onPress={() => navigation.navigate('CommingSoon')}>
+        <View style={styles.rightIcons}>
+          <TouchableOpacity onPress={() => navigation.navigate('')}>
             <Image
               source={require('../assets/setting.png')}
               style={styles.gridIcon}
             />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => setIsMuted(prev => !prev)}>
-            <MaskedView
-              maskElement={
-                <Ionicons
-                  name={isMuted ? 'volume-mute' : 'volume-high'}
-                  size={width * 0.07}
-                  color="black"
-                  style={{ marginBottom: height * 0.01 }}
-                />
-              }>
-              <LinearGradient
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                colors={['#00F5FF', '#00C3FF', '#006BFF']}
-                style={{ width: width * 0.08, height: width * 0.08 }}
-              />
-            </MaskedView>
+          <TouchableOpacity onPress={() => navigation.navigate('ProfileScreen')}>
+            <Image
+              source={require('../assets/profile.png')}
+              style={styles.gridIcon}
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -542,14 +521,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: width * 0.04,
   },
-  iconGrid: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: height * 0.02,
   },
-  iconColumn: {
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    height: height * 0.12,
+  rightIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: width * 0.04,
   },
   gridIcon: {
     width: width * 0.08,

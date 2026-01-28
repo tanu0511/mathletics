@@ -6,14 +6,12 @@ import React, {
   useState,
   useEffect,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Alert } from 'react-native';
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Base backend URL for all socket connections
-// const SOCKET_URL = 'http://43.204.167.118:3000/';
 const SOCKET_URL = 'https://mataletics-backend.onrender.com/';
-// const SOCKET_URL = 'http://43.204.167.118:3000/';
 
 // How long we wait for an initial connection before forcing a retry
 const CONNECTION_TIMEOUT = 15000;
@@ -142,6 +140,12 @@ export const Socket = ({ children }) => {
     socketRef.current.on('connect_error', handleConnectError);
     socketRef.current.on('reconnect_attempt', handleReconnectAttempt);
     socketRef.current.on('reconnect_failed', handleReconnectFailed);
+
+    // ✅ CHALLENGE LISTENERS
+    // socketRef.current.on('challenge-received', (data) => {
+    //   // Managed in Home.js
+    // });
+
   }
 
   useEffect(() => {

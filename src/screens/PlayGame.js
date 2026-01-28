@@ -595,7 +595,7 @@
 
 
 
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -622,9 +622,10 @@ import CustomHeader from '../components/CustomHeader';
 const { width, height } = Dimensions.get('window');
 const scaleFont = size => size * PixelRatio.getFontScale();
 
-const PlayGame = ({ route }) => {
+const PlayGame = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const route = useRoute();
   const { gametype } = route.params || {};
   const { theme } = useTheme();
 
@@ -665,6 +666,11 @@ const PlayGame = ({ route }) => {
           }
         }
 
+        // ✅ OVERRIDE WITH ROUTE PARAMS IF AVAILABLE (Fix for "Random" always selected)
+        if (route.params?.selectedOpponent) {
+          setSelectedOpponent(route.params.selectedOpponent);
+        }
+
         setIsFirstLoad(false);
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -694,6 +700,13 @@ const PlayGame = ({ route }) => {
       )}
     </TouchableOpacity>
   );
+
+  // ✅ Update selected opponent when returning from SelectOpponent
+  useEffect(() => {
+    if (route.params?.selectedOpponent) {
+      setSelectedOpponent(route.params.selectedOpponent);
+    }
+  }, [route.params?.selectedOpponent]);
 
   const handlePlayPress = async () => {
     try {
@@ -725,7 +738,6 @@ const PlayGame = ({ route }) => {
       // ✅ SAVE PREVIOUS MODE
       await AsyncStorage.setItem('previousMode', selectedOpponent);
 
-      // ✅ MULTIPLAYER CONFIG
       const gameConfig = {
         difficulty: selectedDifficulty,
         symbol: symbolValue,
@@ -733,12 +745,51 @@ const PlayGame = ({ route }) => {
         timer: timerInSeconds,
       };
 
-      // ✅ FIXED FLOW (Random ≠ direct lobby)
-      navigation.navigate('SelectOpponent', {
-        gametype,
-        gameConfig,
-        preSelectedOpponent: selectedOpponent, // Random | Computer | Friends
-      });
+      // ✅ ROUTING LOGIC
+      if (selectedOpponent === 'Random') {
+        // Direct to Lobby
+        navigation.navigate('Lobby', {
+          difficulty: selectedDifficulty,
+          digit: 2, // Default or from logic
+          symbol: symbolValue.split(','),
+          timer: timerInSeconds,
+          qm: parseInt(storedQm),
+        });
+      } else if (selectedOpponent === 'Computer') {
+        // To WaitingForOpponent
+        navigation.navigate('WaitingForOpponent', {
+          challengedUser: { username: 'Computer' }, // Dummy user for UI
+          diff: selectedDifficulty,
+          timer: timerInSeconds,
+          symbol: symbolValue,
+          isComputer: true, // Flag to indicate computer mode
+        });
+      } else {
+        // Fallback or Friends logic (Keep existing "SelectOpponent" flow if needed, but user said "VS me gaya to jaise select किया kuch bhi uske bad use vaps select openent ki screen me le jao")
+        // Since we are IN PlayGame, and we select opponent via SelectOpponent screen, we just need to handle what happens when we click Play.
+        // If "Friends", we might need to go to ChallengeFriends or similar.
+        // For now, let's assume standard behavior for random/computer as requested.
+        // If it's something else, maybe we go to SelectOpponent again? Or just stay here?
+        // User said: "vaps select openent ki screen me le jao and waha se play game button ke click me to vahi rakhan hai jo pahle tha"
+        // Wait, "waha se play game button ke click me to vahi rakhan hai jo pahle tha" -> if they go to VS screen, select something, come back, then click Play Game, it should do what it used to do?
+        // No, "sidhe play game me click kare to usko render karwao tum sidha lobby screen me lana hai" (Random specific)
+        // And "computer agr hai to ek wating for oponent banao"
+
+        // If they didn't implementing Friends flow details, I'll default to Random behavior or existing flow for now.
+        // But checking the requested flow for 'Friends' isn't explicitly detailed other than "select kuch bhi... waps select openent ki screen me le jao".
+        // The user's prompt implies: "if user went to VS, selected something, bring them BACK to this screen (PlayGame), and THEN when they click Play Game here..."
+
+        // So if Friends is selected, we probably need a ChallengeFriends flow.
+        // Existing SelectOpponent had: navigation.navigate('ChallengeFriends', ...)
+        // So here, if Friends, we navigate to ChallengeFriends.
+        // ✅ FRIENDS MODE
+        if (selectedOpponent === 'Friends') {
+          navigation.navigate('ChallengeFriends', {
+            gameConfig,
+          });
+        }
+      }
+
     } catch (error) {
       console.error('❌ Error during handlePlayPress:', error);
     }
@@ -975,6 +1026,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: scaleFont(18),
     fontWeight: '700',
+  },
+  vsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1E293B',
+    padding: width * 0.04,
+    borderRadius: 12,
+    marginBottom: height * 0.025,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  vsText: {
+    color: '#fff',
+    fontSize: scaleFont(16),
+    fontWeight: '600',
   },
 });
 
