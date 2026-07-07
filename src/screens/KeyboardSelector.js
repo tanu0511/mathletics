@@ -4,12 +4,14 @@ import { useTheme } from '../context/ThemeContext';
 import { KEYPAD_LAYOUTS } from '../utils/keyboardLayouts';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-
+import { useAppTranslation } from '../context/TranslationContext';
 const { width } = Dimensions.get('window');
 const scale = width / 375;
 const normalize = size => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
 const KeyboardPreview = ({ layout, theme, isSelected }) => {
+    const { t } = useAppTranslation(); // ✅ add this
+
   return (
     <View style={[styles.previewContainer, isSelected && styles.selectedPreview]}>
       {layout.map((row, rowIndex) => (
@@ -20,19 +22,23 @@ const KeyboardPreview = ({ layout, theme, isSelected }) => {
             const isSkip = strItem === 'skip';
             const isNa = strItem === 'na';
 
+
             if (isNa) return <View key={index} style={styles.previewKeyPlaceholder} />;
 
             let content = null;
             if (strItem === 'del' || strItem === '⌫') {
               content = <MaterialIcons name="backspace" size={12} color="#fff" />;
             } else if (strItem === 'ref') {
-              content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>Rev</Text>;
+              content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>{t('REV')}</Text>;
+
             } else if (strItem === 'pm') {
               content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>+/-</Text>;
             } else if (strItem === 'clr' || strItem === 'clear') {
-              content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>CLR</Text>;
+         content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>{t('Clear')}</Text>;
+
             } else if (strItem === 'skip') {
-              content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>SKIP</Text>;
+              content = <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>{t('Skip')}</Text>;
+
             } else {
               content = <Text style={{ fontSize: 14, color: '#fff', fontWeight: 'bold' }}>{item}</Text>;
             }
@@ -71,11 +77,17 @@ const KeyboardPreview = ({ layout, theme, isSelected }) => {
 
 const KeyboardSelector = () => {
   const { keyboardTheme, changeKeyboardTheme, theme } = useTheme();
+  
+            const { t } = useAppTranslation();
 
+  // const options = [
+  //   { id: 'type1', label: 'Option 1', layout: KEYPAD_LAYOUTS.type1 },
+  //   { id: 'type2', label: 'Option 2', layout: KEYPAD_LAYOUTS.type2 },
+  // ];
   const options = [
-    { id: 'type1', label: 'Option 1', layout: KEYPAD_LAYOUTS.type1 },
-    { id: 'type2', label: 'Option 2', layout: KEYPAD_LAYOUTS.type2 },
-  ];
+  { id: 'type1', label: t('Option 1'), layout: KEYPAD_LAYOUTS.type1 },
+  { id: 'type2', label: t('Option 2'), layout: KEYPAD_LAYOUTS.type2 },
+];
 
   return (
     <View style={styles.container}>

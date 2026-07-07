@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "899856448839-tnso1tsv3hcmq1dqsvvt8146hr2emd8e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mathsolvingapplication",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
           "client_id": "899856448839-j630i19f4dg05blt9jd8f6co2ambcpf5.apps.googleusercontent.com",
           "client_type": 3
         }

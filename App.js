@@ -70,52 +70,32 @@ import SelectOpponent from './src/screens/SelectOpponent';
 import GameChallengeScreen from './src/screens/ChallengeScreen';
 import ChallengeFriends from './src/screens/ChallengeScreen';
 import WaitingForOpponent from './src/screens/WaitingForOpponent';
+import Achivements from './src/screens/Achivements';
+import { BadgeProvider } from './src/context/BadgeContext';
+import LevelSelectionScreen from './src/screens/LevelSelectionScreen';
+import ComputerGame from './src/screens/ComputerGame';
+import StatsScreen from './src/screens/StatsScreen';
+import GameHistoryScreen from './src/screens/GameHistoryScreen';  
+import { setLogoutCallback } from './src/api/axiosInstance';
 
+// import { ThemeProvider } from './context/ThemeContext';
+import { TranslationProvider } from './src/context/TranslationContext'; 
+import { ChallengeProvider } from './src/context/ChallengeContext';
+import ChallengePopup from './src/screens/ChallengePopup';
+import BadgePopupController from './src/screens/BadgePopupController ';
 const Stack = createNativeStackNavigator();
-
-// 🔹 Function to refresh user data and update AsyncStorage
-const updateUserData = async () => {
-  try {
-    const token = await AsyncStorage.getItem('authToken');
-    if (!token) return;
-
-    const response = await fetch(
-      'http://43.204.167.118:3000/api/auth/getUser',
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    const data = await response.json();
-
-    if (data.success && data.user) {
-      await AsyncStorage.setItem('userData', JSON.stringify(data.user));
-      console.log('✅ AsyncStorage updated with latest user data');
-    } else {
-      console.log('❌ Failed to refresh user data');
-    }
-  } catch (error) {
-    console.log('⚠️ Error updating user data:', error);
-  }
-};
 
 const App = () => {
   const appState = useRef('active');
 
-  //  Auto-update user data when app loads or comes back to foreground
+  // Auto-update user data when app loads or comes back to foreground
   useEffect(() => {
-    updateUserData(); // Initial call on app load
-
     const subscription = AppState.addEventListener('change', nextState => {
       if (
         appState.current.match(/inactive|background/) &&
         nextState === 'active'
       ) {
-        updateUserData(); // Update again when app returns to foreground
+        // Update when app returns to foreground
       }
       appState.current = nextState;
     });
@@ -123,17 +103,32 @@ const App = () => {
     return () => subscription.remove();
   }, []);
 
+  // Wire up force logout callback once navigation is ready
+  const handleNavigationReady = () => {
+    setLogoutCallback(() => {
+      navigationRef.current?.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+    });
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1 }}>
         <I18nextProvider i18n={i18next}>
           <ThemeProvider>
+                <TranslationProvider>
+
             <KeyboardProvider>
               <AuthProvider>
                 <Socket>
                   <Notification />
                   <SoundProvider>
-                    <NavigationContainer ref={navigationRef}>
+                    <BadgeProvider>
+                      <NavigationContainer ref={navigationRef} onReady={handleNavigationReady}>
+                        <ChallengeProvider>
+
                       <Stack.Navigator screenOptions={{ headerShown: false }}>
                         <Stack.Screen name="Splash" component={Splash} />
                         <Stack.Screen
@@ -264,6 +259,14 @@ const App = () => {
                           name="WaitingForOpponent"
                           component={WaitingForOpponent}
                         />
+                        <Stack.Screen
+                          name="LevelSelectionScreen"
+                          component={LevelSelectionScreen}
+                        />
+                        <Stack.Screen
+                          name="ComputerGame"
+                          component={ComputerGame}
+                        />
                         <Stack.Screen name="Lobby" component={Lobby} />
                         <Stack.Screen
                           name="MultiPlayerGame"
@@ -314,14 +317,35 @@ const App = () => {
                           name="UserProfile"
                           component={UserProfile}
                         />
+                        <Stack.Screen
+                          name="Achivements"
+                          component={Achivements}
+                        />
+                        <Stack.Screen
+                        name = "StatsScreen"
+                        component = {StatsScreen}
+                        />
+                        <Stack.Screen
+                        name = "GameHistoryScreen"
+                        component = {GameHistoryScreen}
+                        />
 
                       </Stack.Navigator>
+
+                          <ChallengePopup />
+                           <BadgePopupController />
+  </ChallengeProvider>
+
                     </NavigationContainer>
+                     
+                    </BadgeProvider>
                   </SoundProvider>
                   <Toast />
                 </Socket>
               </AuthProvider>
             </KeyboardProvider>
+                  </TranslationProvider>
+
           </ThemeProvider>
         </I18nextProvider>
       </SafeAreaView>

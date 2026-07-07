@@ -12,6 +12,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Search, Users, Cpu } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
+import { useAppTranslation } from '../context/TranslationContext';
 import CustomHeader from '../components/CustomHeader';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -106,42 +107,58 @@ function ScreenContent({
 }) {
   const insets = useSafeAreaInsets();
   const route = useRoute(); // ✅ Fix: Access route directly via hook
+  const { t } = useAppTranslation(); // ✅ Translation support
 
   const handleSelection = (opponentType) => {
-    setSelectedOpponent(opponentType);
+  setSelectedOpponent(opponentType);
+
+  if (opponentType === 'Computer') {
+    // ✅ Computer goes to LevelSelectionScreen first
+    navigation.navigate('LevelSelectionScreen', {
+      diff: gameConfig?.difficulty || 'easy',
+      diffCode: gameConfig?.diffCode,
+      selectedSymbols: gameConfig?.symbol?.split(',') || ['sum', 'difference'],
+      timer: gameConfig?.timer || 60,
+      symbol: gameConfig?.symbol || 'sum,difference',
+      isComputer: true,
+      gametype: route.params?.gametype,
+    });
+  } else {
+    // ✅ Random and Friends — untouched, same as before
     navigation.navigate('PlayGame', {
       selectedOpponent: opponentType,
-      gametype: route.params?.gametype
+      gametype: route.params?.gametype,
     });
-  };
+  }
+};
 
   return (
     <>
       {/* ================= SELECT OPPONENT ================= */}
       {currentScreen === 'select' && (
         <View style={[styles.screenContainer, { paddingTop: insets.top + 30 }]}>
-          <CustomHeader title="Select Opponent" onBack={navigateBack} />
+          <CustomHeader title={t('Select Opponent')} onBack={navigateBack} />
 
           <View style={styles.content}>
             <OpponentCard
-              title="Random Opponent"
-              subtitle="Match with any available player"
+              title={t('Random Opponent')}
+              subtitle={t('Match with any available player')}
               icon={<Users size={32} color="#f8630dff" />}
               selected={selectedOpponent === 'Random'}
               onPress={() => handleSelection('Random')}
             />
 
             <OpponentCard
-              title="Computer"
-              subtitle="Play against AI"
+              title={t('Computer Opponent')}
+              subtitle={t('Play against AI')}
               icon={<Cpu size={32} color="#4ade80" />}
               selected={selectedOpponent === 'Computer'}
               onPress={() => handleSelection('Computer')}
             />
 
             <OpponentCard
-              title="Friends"
-              subtitle="Search and challenge friends"
+              title={t('Friends Opponent')}
+              subtitle={t('Search and challenge friends')}
               icon={<Search size={32} color="#ffd700" />}
               selected={selectedOpponent === 'Friends'}
               onPress={() => handleSelection('Friends')}
@@ -153,7 +170,7 @@ function ScreenContent({
       {/* ================= DIFFICULTY (ROW DESIGN) - KEPT FOR REFERENCE IF NEEDED, BUT CURRENTLY UNUSED AS WE RETURN TO PLAYGAME ================= */}
       {currentScreen === 'difficulty' && (
         <View style={[styles.screenContainer, { paddingTop: insets.top + 30 }]}>
-          <CustomHeader title="Choose Level" onBack={navigateBack} />
+          <CustomHeader title={t('Choose Level')} onBack={navigateBack} />
           {/* If we wanted to handle difficulty here, we would pass it back to PlayGame too. For now, ignoring as PlayGame has difficulty. */}
         </View>
       )}
@@ -272,3 +289,210 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+
+
+
+// import React, { useState } from 'react';
+// import {
+//   View,
+//   Text,
+//   StyleSheet,
+//   TouchableOpacity,
+//   Dimensions,
+//   ScrollView,
+// } from 'react-native';
+// import LinearGradient from 'react-native-linear-gradient';
+// import { Search, Users, Cpu } from 'lucide-react-native';
+// import { useNavigation, useRoute } from '@react-navigation/native';
+// import { useTheme } from '../context/ThemeContext';
+// import { useAppTranslation } from '../context/TranslationContext';
+// import CustomHeader from '../components/CustomHeader';
+// import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// const { width } = Dimensions.get('window');
+
+// export default function SelectOpponent() {
+//   const navigation = useNavigation();
+//   const route = useRoute();
+//   const { theme } = useTheme();
+
+//   const { gameConfig, preSelectedOpponent } = route.params || {};
+
+//   const [selectedOpponent, setSelectedOpponent] = useState(
+//     preSelectedOpponent || 'Random',
+//   );
+
+//   const navigateBack = () => navigation.goBack();
+
+//   const Wrapper = theme.backgroundGradient ? LinearGradient : View;
+//   const wrapperProps = theme.backgroundGradient
+//     ? { colors: theme.backgroundGradient }
+//     : { style: { backgroundColor: theme.background || '#0B1220' } };
+
+//   return (
+//     <Wrapper style={styles.container} {...wrapperProps}>
+//       <ScreenContent
+//         selectedOpponent={selectedOpponent}
+//         setSelectedOpponent={setSelectedOpponent}
+//         navigateBack={navigateBack}
+//         navigation={navigation}
+//         gameConfig={gameConfig}
+//         route={route}
+//       />
+//     </Wrapper>
+//   );
+// }
+
+// /* ================= SCREEN CONTENT ================= */
+
+// function ScreenContent({
+//   selectedOpponent,
+//   setSelectedOpponent,
+//   navigateBack,
+//   navigation,
+//   gameConfig,
+//   route,
+// }) {
+//   const insets = useSafeAreaInsets();
+//   const { t } = useAppTranslation();
+
+//   // Build the shared params that every downstream screen needs
+//   const buildBaseParams = () => {
+//     const symbolArray = gameConfig?.symbol?.split(',') || ['sum', 'difference'];
+//     const symbolString = Array.isArray(gameConfig?.symbol)
+//       ? gameConfig.symbol.join(',')
+//       : gameConfig?.symbol || 'sum,difference';
+
+//     // Derive diffCode: E/M/H + 2 or 4
+//     const diff = (gameConfig?.difficulty || 'easy').toLowerCase();
+//     const tier = diff === 'hard' ? 'H' : diff === 'medium' ? 'M' : 'E';
+//     const symParts = symbolString.split(',').map(s => s.trim()).filter(Boolean);
+//     const count = symParts.length >= 4 ? '4' : '2';
+//     const diffCode = `${tier}${count}`;
+
+//     return {
+//       diff: gameConfig?.difficulty || 'easy',
+//       timer: gameConfig?.timer || 60,
+//       symbol: symbolString,
+//       selectedSymbols: symbolArray,
+//       diffCode,
+//       digit: 2,
+//       qm: gameConfig?.qm || 0,
+//     };
+//   };
+
+//   const handleSelection = opponentType => {
+//     setSelectedOpponent(opponentType);
+
+//     const baseParams = buildBaseParams();
+
+//     if (opponentType === 'Computer') {
+//       // ✅ Computer flow: SelectOpponent → LevelSelectionScreen → WaitingForOpponent → ComputerGame
+//       navigation.navigate('LevelSelectionScreen', {
+//         ...baseParams,
+//         isComputer: true,
+//       });
+//     } else if (opponentType === 'Random') {
+//       // Random matchmaking → Lobby
+//       navigation.navigate('Lobby', {
+//         difficulty: baseParams.diff,
+//         digit: 2,
+//         symbol: baseParams.selectedSymbols,
+//         timer: baseParams.timer,
+//         qm: baseParams.qm,
+//       });
+//     } else if (opponentType === 'Friends') {
+//       // Friends flow → PlayGame or Friends search screen
+//       navigation.navigate('PlayGame', {
+//         selectedOpponent: opponentType,
+//         gametype: route.params?.gametype,
+//         ...baseParams,
+//       });
+//     }
+//   };
+
+//   return (
+//     <View style={[styles.screenContainer, { paddingTop: insets.top + 30 }]}>
+//       <CustomHeader title={t('Select Opponent')} onBack={navigateBack} />
+
+//       <View style={styles.content}>
+//         <OpponentCard
+//           title={t('Random Opponent')}
+//           subtitle={t('Match with any available player')}
+//           icon={<Users size={32} color="#f8630dff" />}
+//           selected={selectedOpponent === 'Random'}
+//           onPress={() => handleSelection('Random')}
+//         />
+
+//         <OpponentCard
+//           title={t('Computer Opponent')}
+//           subtitle={t('Play against AI — choose your level')}
+//           icon={<Cpu size={32} color="#4ade80" />}
+//           selected={selectedOpponent === 'Computer'}
+//           onPress={() => handleSelection('Computer')}
+//         />
+
+//         <OpponentCard
+//           title={t('Friends Opponent')}
+//           subtitle={t('Search and challenge friends')}
+//           icon={<Search size={32} color="#ffd700" />}
+//           selected={selectedOpponent === 'Friends'}
+//           onPress={() => handleSelection('Friends')}
+//         />
+//       </View>
+//     </View>
+//   );
+// }
+
+// /* ================= CARD ================= */
+
+// const OpponentCard = ({ title, subtitle, icon, selected, onPress }) => (
+//   <TouchableOpacity
+//     onPress={onPress}
+//     style={[
+//       styles.card,
+//       {
+//         borderColor: selected ? '#fb8a08ff' : 'rgba(255,255,255,0.1)',
+//         borderWidth: selected ? 2 : 1,
+//       },
+//     ]}>
+//     <View style={styles.cardContent}>
+//       <View style={styles.iconCircle}>{icon}</View>
+//       <View style={{ flex: 1 }}>
+//         <Text style={[styles.cardTitle, selected && { fontWeight: 'bold' }]}>
+//           {title}
+//         </Text>
+//         <Text style={styles.cardSubtitle}>{subtitle}</Text>
+//       </View>
+//     </View>
+//   </TouchableOpacity>
+// );
+
+// /* ================= STYLES ================= */
+
+// const styles = StyleSheet.create({
+//   container: { flex: 1 },
+//   screenContainer: { flex: 1 },
+
+//   content: { flex: 1, padding: 20 },
+
+//   card: {
+//     borderRadius: 16,
+//     padding: 20,
+//     marginBottom: 16,
+//     backgroundColor: 'rgba(92, 19, 237, 0.05)',
+//   },
+//   cardContent: { flexDirection: 'row', alignItems: 'center' },
+//   iconCircle: {
+//     width: 60,
+//     height: 60,
+//     borderRadius: 30,
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//     marginRight: 16,
+//     backgroundColor: 'rgba(255,255,255,0.12)',
+//   },
+//   cardTitle: { fontSize: 18, color: '#fff', marginBottom: 4 },
+//   cardSubtitle: { fontSize: 14, color: '#90caf9' },
+// });

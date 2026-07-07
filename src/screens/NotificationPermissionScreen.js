@@ -90,7 +90,7 @@ const NotificationPermissionScreen = () => {
       <View style={styles.textContainer}>
         <Text style={styles.title}>Welcome</Text>
         <Text style={styles.subtitle}>
-          Stay updated! Allow notifications to get the latest alerts.
+          Stay updateds! Allow notifications to get the latest alerts.
         </Text>
       </View>
 

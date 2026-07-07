@@ -56,4 +56,5 @@ export const CountryList = [
     { name: 'United Kingdom', flag: '🇬🇧', code: 'GB' },
     { name: 'United States', flag: '🇺🇸', code: 'US' },
     { name: 'Vietnam', flag: '🇻🇳', code: 'VN' },
+    {name: 'Others', flag: '🌐', code: 'OTHER'},
 ];

@@ -58,6 +58,7 @@ import { SceneMap, TabBar, TabView } from 'react-native-tab-view';
 import SeatSettingsModal from '../Settings/SeatSettingsModal';
 import * as MusicFiles from 'react-native-get-music-files';
 import TrackPlayer, { Capability } from 'react-native-track-player';
+import { authFetch as fetch } from '../utils/authFetch'; // auto-refresh wrapper for expired access tokens
 
 const { width, height } = Dimensions.get('window');
 const stickerSize = (width - 24 - 5 * 8) / 4;

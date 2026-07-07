@@ -1,4 +1,7 @@
-import React, { useRef, useEffect, useState } from 'react';
+
+
+
+import { React, useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,20 +9,19 @@ import {
   TouchableOpacity,
   Dimensions,
   PixelRatio,
-  StatusBar,
   Animated,
   Easing,
-  ScrollView,
-  Alert,
+  Image, // ✅ NEW: added Image import
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
-import { useSocket } from '../context/Socket';
 import Icon from 'react-native-vector-icons/Ionicons';
+import BadgePopup from './BadgePopup';
+import OfflineBadgesModal from './OfflineBadgesModal';
+import { useBadge } from '../context/BadgeContext';
 
 const { width, height } = Dimensions.get('window');
 const scale = size => (width / 375) * size;
@@ -29,24 +31,23 @@ const MultiplayerResultScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { theme } = useTheme();
-  const socket = useSocket();
+
+  const { earnedBadges, setEarnedBadges, showBadges } = useBadge();
+  console.log('[🏅 MultiplayerResultScreen] Badge context loaded:', { earnedBadges, showBadges });
 
   // State
-  const [gameResult, setGameResult] = useState(null); // 'win', 'lose', or 'draw'
+  const [gameResult, setGameResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(true);
   const [user, setUser] = useState(null);
-  const [authToken, setAuthToken] = useState(null);
 
-  // ✅ REMATCH STATE
   const [rematchRequested, setRematchRequested] = useState(false);
   const [rematchAccepted, setRematchAccepted] = useState(false);
   const [opponentName, setOpponentName] = useState('Opponent');
 
-  // Modal State
-  const [showModal, setShowModal] = useState(true);
+  const [offlineBadges, setOfflineBadges] = useState([]);
+  console.log('[🏅 MultiplayerResultScreen] Offline badges state:', offlineBadges);
 
-  const hasSubmittedRef = useRef(false);
-  const socketRef = useRef(socket);
+  const [resultAnimationDone, setResultAnimationDone] = useState(false);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -63,6 +64,8 @@ const MultiplayerResultScreen = ({ route }) => {
     skippedQuestions,
     correctPercentage,
     opponentUsername,
+    // ✅ NEW: destructure profileImage fields passed from MultiPlayerGame
+    opponentProfileImage,
   } = route.params;
 
   /* ================= GET LOGIN DATA ================= */
@@ -70,13 +73,9 @@ const MultiplayerResultScreen = ({ route }) => {
     const getLoginData = async () => {
       try {
         const storedUser = await AsyncStorage.getItem('userData');
-        const storedToken = await AsyncStorage.getItem('authToken');
         const parsedUser = storedUser ? JSON.parse(storedUser) : null;
         setUser(parsedUser);
-        setAuthToken(storedToken);
-        if (opponentUsername) {
-          setOpponentName(opponentUsername);
-        }
+        if (opponentUsername) setOpponentName(opponentUsername);
       } catch (err) {
         console.log('AsyncStorage Error:', err?.message);
         setIsProcessing(false);
@@ -85,111 +84,18 @@ const MultiplayerResultScreen = ({ route }) => {
     getLoginData();
   }, [opponentUsername]);
 
-  /* ================= REMATCH SOCKET LISTENERS ================= */
+  /* ================= RESULT + ANIMATION ================= */
   useEffect(() => {
-    if (!socket) return;
-    socketRef.current = socket;
-
-    // ✅ LISTEN FOR REMATCH REQUEST FROM OPPONENT
-    const handleRematchRequest = data => {
-      console.log('🔄 Rematch request received:', data);
-      Alert.alert(
-        'Rematch Request',
-        `${data.opponentName || 'Your opponent'} wants a rematch!`,
-        [
-          { text: 'Decline', style: 'cancel' },
-          {
-            text: 'Accept',
-            onPress: () => handleAcceptRematch(data),
-          },
-        ],
-      );
+    const determineResult = () => {
+      if (totalScore > opponentScore) return 'win';
+      if (totalScore < opponentScore) return 'lose';
+      return 'draw';
     };
 
-    // ✅ LISTEN FOR REMATCH ACCEPTED
-    const handleRematchAccepted = data => {
-      console.log('✅ Rematch accepted by opponent');
-      setRematchAccepted(true);
-      Alert.alert(
-        'Rematch Accepted!',
-        'Starting new match with same opponent...',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.replace('MultiPlayerGame', {
-                opponent: {
-                  id: player2Id,
-                  username: opponentName,
-                },
-                difficulty: route.params.difficulty || 'medium',
-                timer: route.params.timer || 60,
-                myMongoId: user?.id || user?._id,
-              });
-            },
-          },
-        ],
-      );
-    };
+    const result = determineResult();
+    setGameResult(result);
+    setIsProcessing(false);
 
-    // ✅ LISTEN FOR REMATCH DECLINED
-    const handleRematchDeclined = data => {
-      console.log('❌ Rematch declined by opponent');
-      Alert.alert(
-        'Rematch Declined',
-        'Your opponent declined the rematch request.',
-      );
-      setRematchRequested(false);
-    };
-
-    socket.on('rematch-request', handleRematchRequest);
-    socket.on('rematch-accepted', handleRematchAccepted);
-    socket.on('rematch-declined', handleRematchDeclined);
-
-    return () => {
-      socket.off('rematch-request', handleRematchRequest);
-      socket.off('rematch-accepted', handleRematchAccepted);
-      socket.off('rematch-declined', handleRematchDeclined);
-    };
-  }, [socket, player2Id, opponentName, user, navigation, route.params]);
-
-  const handleAcceptRematch = data => {
-    console.log('✅ Accepting rematch');
-    socketRef.current?.emit('rematch-accept', {
-      toPlayerId: data.fromPlayerId,
-      playerName: user?.username || 'Player',
-    });
-
-    setRematchAccepted(true);
-    navigation.replace('MultiPlayerGame', {
-      opponent: {
-        id: data.fromPlayerId,
-        username: data.opponentName,
-      },
-      difficulty: route.params.difficulty || 'medium',
-      timer: route.params.timer || 60,
-      myMongoId: user?.id || user?._id,
-    });
-  };
-
-  // ✅ UPDATED REMATCH LOGIC: Navigate to Waiting Screen which sends challenge
-  const handleRequestRematch = () => {
-    // Navigate to WaitingForOpponent which handles sending the challenge
-    navigation.replace('WaitingForOpponent', {
-      challengedUser: {
-        username: opponentName,
-        id: player2Id, // The WaitingForOpponent needs this structure
-        _id: player2Id,
-      },
-      diff: route.params.difficulty,
-      timer: route.params.durationSeconds || route.params.timer || 60, // Ensure timer is passed
-      symbol: route.params.symbol, // Pass if available
-    });
-  };
-
-  /* ================= RESULT API ================= */
-  useEffect(() => {
-    // Start Animation immediately
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -203,82 +109,68 @@ const MultiplayerResultScreen = ({ route }) => {
         useNativeDriver: true,
         easing: Easing.out(Easing.back(1.5)),
       }),
-    ]).start();
-
-    // ✅ Determine game result (win/lose/draw)
-    const determineResult = () => {
-      if (totalScore > opponentScore) return 'win';
-      if (totalScore < opponentScore) return 'lose';
-      return 'draw';
-    };
-
-    const result = determineResult();
-    setGameResult(result);
-    setIsProcessing(false); // ✅ Set immediately - no API call needed
-
-    console.log('🎯 Game Result:', result);
-    console.log('📊 Scores:', { you: totalScore, opponent: opponentScore });
-
-    // ✅ REMOVED: API call to /api/match/result
-    // The backend already saved the game when it ended via GameRoom.saveGameToDatabase()
-    // No need to call API again from frontend
+    ]).start(() => {
+      console.log('[🏅 MultiplayerResultScreen] Result animation complete, waiting for badge processing...');
+      setTimeout(() => {
+        console.log('[🏅 MultiplayerResultScreen] Setting resultAnimationDone = true, current earnedBadges:', earnedBadges);
+        setResultAnimationDone(true);
+      }, 800);
+    });
   }, [totalScore, opponentScore]);
+
+  /* ================= OFFLINE BADGES FROM CONTEXT ================= */
+  useEffect(() => {
+    console.log('[🏅 MultiplayerResultScreen] Earned badges updated:', earnedBadges);
+  }, [earnedBadges]);
+
+  useEffect(() => {
+    console.log('[🏅 MultiplayerResultScreen] Result animation done:', resultAnimationDone);
+    console.log('[🏅 MultiplayerResultScreen] Should show badge popup?', resultAnimationDone && earnedBadges.length > 0);
+  }, [resultAnimationDone]);
+
+  /* ================= REMATCH HANDLERS ================= */
+  const handleRequestRematch = () => {
+    navigation.replace('WaitingForOpponent', {
+      challengedUser: {
+        username: opponentName,
+        id: player2Id,
+        _id: player2Id,
+      },
+      diff: route.params.difficulty,
+      timer: route.params.durationSeconds || route.params.timer || 60,
+      symbol: route.params.symbol,
+    });
+  };
 
   /* ================= UI HELPERS ================= */
   const getResultColor = () => {
     switch (gameResult) {
-      case 'win':
-        return '#4ade80'; // Green
-      case 'lose':
-        return '#f87171'; // Red
-      case 'draw':
-        return '#fbbf24'; // Yellow/Amber
-      default:
-        return '#ffffff';
-    }
-  };
-
-  const getResultTitle = () => {
-    switch (gameResult) {
-      case 'win':
-        return 'You Win! 🏆';
-      case 'lose':
-        return 'Better Luck\nNext Time! 😔';
-      case 'draw':
-        return "It's a Draw! 🤝";
-      default:
-        return 'Match Complete';
-    }
-  };
-
-  const getResultMessage = () => {
-    switch (gameResult) {
-      case 'win':
-        return 'You Win!';
-      case 'lose':
-        return 'You Lose!';
-      case 'draw':
-        return 'Match Drawn!';
-      default:
-        return 'Match completed';
+      case 'win': return '#4ade80';
+      case 'lose': return '#f87171';
+      case 'draw': return '#fbbf24';
+      default: return '#ffffff';
     }
   };
 
   const getResultEmoji = () => {
     switch (gameResult) {
-      case 'win':
-        return '🏆';
-      case 'lose':
-        return '😥';
-      case 'draw':
-        return '🤝';
-      default:
-        return '🎮';
+      case 'win': return '🏆';
+      case 'lose': return '😥';
+      case 'draw': return '🤝';
+      default: return '🎮';
     }
   };
 
-  /* ================= UI COMPONENTS ================= */
+  /* ================= LOADING STATE ================= */
+  if (!gameResult) {
+    return (
+      <View style={[styles.mainContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: '#fff', fontSize: 16 }}>Loading result...</Text>
+      </View>
+    );
+  }
 
+  /* ================= RENDER ================= */
   return (
     <View style={styles.mainContainer}>
       <LinearGradient
@@ -286,9 +178,10 @@ const MultiplayerResultScreen = ({ route }) => {
         style={styles.background}
       />
 
-      {/* ✅ NEW FULL SCREEN MODAL-LIKE UI */}
+      {/* FULL SCREEN RESULT UI */}
       <View style={styles.newModalContainer}>
-        {/* Top Header: Close & Share */}
+
+        {/* Header: Close & Share */}
         <View style={styles.modalHeader}>
           <TouchableOpacity
             onPress={() => navigation.navigate('BottomTab')}
@@ -305,25 +198,26 @@ const MultiplayerResultScreen = ({ route }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Center Content: Result */}
-        <View style={styles.newResultContent}>
-          <View
-            style={[styles.resultBadge, { backgroundColor: getResultColor(), marginTop: 40 }]}
-          >
+        {/* Result Content */}
+        <Animated.View
+          style={[
+            styles.newResultContent,
+            { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
+          ]}
+        >
+          <View style={[styles.resultBadge, { backgroundColor: getResultColor(), marginTop: 40 }]}>
             <Text style={styles.resultBadgeText}>
-              {gameResult === 'win'
-                ? 'VICTORY'
-                : gameResult === 'lose'
-                  ? 'DEFEAT'
-                  : 'DRAW'}
+              {gameResult === 'win' ? 'VICTORY' : gameResult === 'lose' ? 'DEFEAT' : 'DRAW'}
             </Text>
           </View>
 
           <Text style={[styles.resultTitle, { color: getResultColor(), fontSize: 32 }]}>
             {gameResult === 'win' ? 'You Won!' : gameResult === 'lose' ? 'You Lost!' : 'Draw!'}
           </Text>
+
           <Text style={{ fontSize: 60, marginTop: 20 }}>{getResultEmoji()}</Text>
 
+          {/* Scores Row */}
           <View style={[styles.playersRow, { marginTop: 40, justifyContent: 'space-around' }]}>
             {/* Player */}
             <View style={styles.playerSide}>
@@ -331,12 +225,21 @@ const MultiplayerResultScreen = ({ route }) => {
                 <Text style={styles.starIcon}>⭐</Text>
                 <Text style={styles.labelTitle}>YOU</Text>
               </View>
+              {/* ✅ NEW: show my profile pic if available */}
+              {user?.profilePic ? (
+                <Image
+                  source={{ uri: user.profilePic }}
+                  style={styles.playerAvatar}
+                  onError={() => {}}
+                />
+              ) : null}
               <Text
                 style={[
                   styles.mainScore,
                   gameResult === 'win' && { color: '#4ade80' },
                   gameResult === 'draw' && { color: '#fbbf24' },
-                ]}>
+                ]}
+              >
                 {totalScore}
               </Text>
             </View>
@@ -345,14 +248,10 @@ const MultiplayerResultScreen = ({ route }) => {
             <View
               style={[
                 styles.vsBadge,
-                gameResult === 'draw' && {
-                  backgroundColor: '#fbbf24',
-                  borderColor: '#fbbf24',
-                },
-              ]}>
-              <Text style={styles.vsText}>
-                {gameResult === 'draw' ? '=' : 'VS'}
-              </Text>
+                gameResult === 'draw' && { backgroundColor: '#fbbf24', borderColor: '#fbbf24' },
+              ]}
+            >
+              <Text style={styles.vsText}>{gameResult === 'draw' ? '=' : 'VS'}</Text>
             </View>
 
             {/* Opponent */}
@@ -360,21 +259,52 @@ const MultiplayerResultScreen = ({ route }) => {
               <View style={styles.playerHeader}>
                 <Text style={styles.labelTitle}>OPPONENT</Text>
               </View>
+              {/* ✅ NEW: show opponent profile image from socket event data */}
+              {opponentProfileImage ? (
+                <Image
+                  source={{ uri: opponentProfileImage }}
+                  style={styles.playerAvatar}
+                  onError={() => {}}
+                />
+              ) : null}
               <Text
                 style={[
                   styles.mainScore,
                   gameResult === 'lose' && { color: '#f87171' },
                   gameResult === 'draw' && { color: '#fbbf24' },
-                ]}>
+                ]}
+              >
                 {opponentScore}
               </Text>
             </View>
           </View>
-        </View>
+
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{correctCount || 0}</Text>
+              <Text style={styles.statLabel}>Correct</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{inCorrectCount || 0}</Text>
+              <Text style={styles.statLabel}>Wrong</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{skippedQuestions || 0}</Text>
+              <Text style={styles.statLabel}>Skipped</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{correctPercentage || 0}%</Text>
+              <Text style={styles.statLabel}>Accuracy</Text>
+            </View>
+          </View>
+        </Animated.View>
 
         {/* Bottom Buttons */}
         <View style={styles.bottomButtonsContainer}>
-          {/* Rematch Button */}
           <TouchableOpacity
             style={[styles.actionButton, styles.rematchButton]}
             onPress={handleRequestRematch}
@@ -382,7 +312,6 @@ const MultiplayerResultScreen = ({ route }) => {
             <Text style={styles.actionButtonText}>Rematch</Text>
           </TouchableOpacity>
 
-          {/* New Game Button */}
           <TouchableOpacity
             style={[styles.actionButton, styles.newGameButton]}
             onPress={() => navigation.navigate('ChallengeScreen')}
@@ -390,253 +319,34 @@ const MultiplayerResultScreen = ({ route }) => {
             <Text style={styles.actionButtonText}>New Game</Text>
           </TouchableOpacity>
         </View>
-
       </View>
 
-      {/* OLD UI HIDDEN */}
-      {false && (
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { marginTop: insets.top }]}>
-          <Text style={[styles.title, { color: getResultColor() }]}>
-            {getResultTitle()}
-          </Text>
-
-          {/* ✅ Draw Badge (only shown when draw) */}
-          {gameResult === 'draw' && (
-            <View style={styles.drawBadge}>
-              <Text style={styles.drawBadgeText}>🤝 DRAW MATCH</Text>
-            </View>
-          )}
-
-          <View
-            style={[
-              styles.scoreBox,
-              { backgroundColor: theme.cardBackground || '#1f2937' },
-            ]}>
-            <Text style={styles.label}>Your Score</Text>
-            <Text style={styles.value}>{totalScore}</Text>
-          </View>
-
-          <View
-            style={[
-              styles.scoreBox,
-              { backgroundColor: theme.cardBackground || '#1f2937' },
-            ]}>
-            <Text style={styles.label}>Opponent Score</Text>
-            <Text style={styles.value}>{opponentScore}</Text>
-          </View>
-
-          {/* ✅ Show score difference or "Equal" for draw */}
-          <View
-            style={[
-              styles.scoreBox,
-              {
-                backgroundColor: theme.cardBackground || '#1f2937',
-                borderWidth: 2,
-                borderColor: getResultColor(),
-              },
-            ]}>
-            <Text style={styles.label}>Score Difference</Text>
-            <Text style={[styles.value, { color: getResultColor() }]}>
-              {gameResult === 'draw'
-                ? 'Equal'
-                : `${Math.abs(totalScore - opponentScore)}`}
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.scoreBox,
-              { backgroundColor: theme.cardBackground || '#1f2937' },
-            ]}>
-            <Text style={styles.label}>Correct Answers</Text>
-            <Text style={styles.value}>{correctCount || 0}</Text>
-          </View>
-
-          <View
-            style={[
-              styles.scoreBox,
-              { backgroundColor: theme.cardBackground || '#1f2937' },
-            ]}>
-            <Text style={styles.label}>Incorrect Answers</Text>
-            <Text style={styles.value}>{inCorrectCount || 0}</Text>
-          </View>
-
-          <View
-            style={[
-              styles.scoreBox,
-              { backgroundColor: theme.cardBackground || '#1f2937' },
-            ]}>
-            <Text style={styles.label}>Skipped</Text>
-            <Text style={styles.value}>{skippedQuestions || 0}</Text>
-          </View>
-
-          <View
-            style={[
-              styles.scoreBox,
-              { backgroundColor: theme.cardBackground || '#1f2937' },
-            ]}>
-            <Text style={styles.label}>Accuracy</Text>
-            <Text style={styles.value}>{correctPercentage || 0}%</Text>
-          </View>
-
-          {/* New Game Button */}
-          <LinearGradient
-            colors={[theme.primary || '#f97316', theme.primary || '#f97316']}
-            style={styles.newGameBtn}>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate('PlayGame', { gametype: 'MULTIPLAYER' })
-              }
-              style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.newGameText}>Play Again (New Opponent)</Text>
-            </TouchableOpacity>
-          </LinearGradient>
-
-          {/* ✅ REMATCH BUTTON */}
-          <LinearGradient
-            colors={['#8B5CF6', '#7C3AED']}
-            style={styles.rematchBtn}>
-            <TouchableOpacity
-              onPress={handleRequestRematch}
-              disabled={rematchRequested || rematchAccepted}
-              style={{ width: '100%', alignItems: 'center' }}>
-              <Text style={styles.rematchText}>
-                {rematchRequested
-                  ? '⏳ Waiting for response...'
-                  : rematchAccepted
-                    ? '✓ Rematch Starting...'
-                    : '🔄 Rematch with Same Opponent'}
-              </Text>
-            </TouchableOpacity>
-          </LinearGradient>
-
-          {/* Home Button */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('BottomTab')}
-            style={[
-              styles.homeBtn,
-              { backgroundColor: theme.cardBackground || '#052757ff' },
-            ]}>
-            <Text style={styles.homeText}>Home</Text>
-          </TouchableOpacity>
-        </ScrollView>
+      {/* ================= BADGE POPUP ================= */}
+      {resultAnimationDone && earnedBadges.length > 0 && (
+        <>
+          {console.log('[🏅 MultiplayerResultScreen] Rendering BadgePopup with badges:', earnedBadges)}
+          <BadgePopup
+            badges={earnedBadges}
+            onFinish={() => {
+              console.log('[🏅 MultiplayerResultScreen] Badge popup finished, clearing badges');
+              setEarnedBadges([]);
+            }}
+          />
+        </>
       )}
 
-      {/* 2. OVERLAY MODAL: PREMIUM CARD */}
-      {false && showModal && (
-        <View style={styles.modalOverlay}>
-          <Animated.View
-            style={[
-              styles.resultCard,
-              {
-                opacity: fadeAnim,
-                transform: [{ scale: scaleAnim }],
-                borderColor: getResultColor(),
-                borderWidth: 2,
-              },
-            ]}>
-            {/* ✅ Result Badge at Top */}
-            <View
-              style={[styles.resultBadge, { backgroundColor: getResultColor() }]}>
-              <Text style={styles.resultBadgeText}>
-                {gameResult === 'win'
-                  ? 'VICTORY'
-                  : gameResult === 'lose'
-                    ? 'DEFEAT'
-                    : 'DRAW'}
-              </Text>
-            </View>
-
-            {/* Players Row */}
-            <View style={styles.playersRow}>
-              {/* Player */}
-              <View style={styles.playerSide}>
-                <View style={styles.playerHeader}>
-                  <Text style={styles.starIcon}>⭐</Text>
-                  <Text style={styles.labelTitle}>YOU</Text>
-                </View>
-                <Text style={styles.playerRating}>
-                  {user?.pr?.pvp?.medium || user?.rating || 1000}
-                </Text>
-                <Text
-                  style={[
-                    styles.mainScore,
-                    gameResult === 'win' && { color: '#4ade80' },
-                    gameResult === 'draw' && { color: '#fbbf24' },
-                  ]}>
-                  {totalScore}
-                </Text>
-              </View>
-
-              {/* VS Badge */}
-              <View
-                style={[
-                  styles.vsBadge,
-                  gameResult === 'draw' && {
-                    backgroundColor: '#fbbf24',
-                    borderColor: '#fbbf24',
-                  },
-                ]}>
-                <Text style={styles.vsText}>
-                  {gameResult === 'draw' ? '=' : 'VS'}
-                </Text>
-              </View>
-
-              {/* Opponent */}
-              <View style={styles.opponentSide}>
-                <View style={styles.playerHeader}>
-                  <Text style={styles.labelTitle}>OPPONENT</Text>
-                  <View style={styles.miniAvatar}>
-                    <Text style={{ color: '#fff', fontSize: 10 }}>OP</Text>
-                  </View>
-                </View>
-                <Text style={styles.playerRating}>1000</Text>
-                <Text
-                  style={[
-                    styles.mainScore,
-                    gameResult === 'lose' && { color: '#f87171' },
-                    gameResult === 'draw' && { color: '#fbbf24' },
-                  ]}>
-                  {opponentScore}
-                </Text>
-              </View>
-            </View>
-
-            {/* ✅ Score Difference Indicator */}
-            {gameResult !== 'draw' && (
-              <View style={styles.scoreDiffContainer}>
-                <Text style={styles.scoreDiffLabel}>Score Difference</Text>
-                <Text
-                  style={[styles.scoreDiffValue, { color: getResultColor() }]}>
-                  {Math.abs(totalScore - opponentScore)} points
-                </Text>
-              </View>
-            )}
-
-            {/* Result Message */}
-            <View style={styles.messageContainer}>
-              <Text style={[styles.resultTitle, { color: getResultColor() }]}>
-                {getResultTitle().replace('\n', ' ')} {getResultEmoji()}
-              </Text>
-              <Text style={styles.resultSubtitle}>{getResultMessage()}</Text>
-              {/* Duration */}
-              <Text style={styles.durationText}>
-                Duration:{' '}
-                <Text style={{ fontWeight: 'bold', color: '#fff' }}>
-                  {durationSeconds}s
-                </Text>
-              </Text>
-            </View>
-
-            {/* OK Button - Closes Modal */}
-            <TouchableOpacity
-              style={[styles.okButton, { backgroundColor: getResultColor() }]}
-              onPress={() => setShowModal(false)}>
-              <Text style={styles.okButtonText}>Continue</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
+      {/* ================= OFFLINE BADGES MODAL ================= */}
+      {offlineBadges.length > 0 && (
+        <>
+          {console.log('[🏅 MultiplayerResultScreen] Rendering OfflineBadgesModal with badges:', offlineBadges)}
+          <OfflineBadgesModal
+            badges={offlineBadges}
+            onDismiss={() => {
+              console.log('[🏅 MultiplayerResultScreen] Offline badges dismissed');
+              setOfflineBadges([]);
+            }}
+          />
+        </>
       )}
     </View>
   );
@@ -653,102 +363,18 @@ const styles = StyleSheet.create({
   background: {
     ...StyleSheet.absoluteFillObject,
   },
-  scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
 
-  // ORIGINAL SCREEN STYLES
-  title: {
-    fontSize: scaleFont(30),
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 20,
-    marginTop: 20,
-  },
-  drawBadge: {
-    backgroundColor: '#fbbf24',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginBottom: 30,
-  },
-  drawBadgeText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  scoreBox: {
-    width: '100%',
-    borderRadius: 12,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  label: {
-    color: '#B0BEC5',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  value: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  newGameBtn: {
-    width: '80%',
-    borderRadius: 30,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginTop: 40,
-    overflow: 'hidden',
-  },
-  newGameText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  homeBtn: {
-    width: '80%',
-    borderRadius: 30,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  homeText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-
-  // MODAL OVERLAY STYLES
-  modalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    zIndex: 100,
-  },
-  resultCard: {
-    width: '100%',
-    maxWidth: 340,
-    padding: 24,
+  // ✅ NEW: avatar style for player/opponent images in scores row
+  playerAvatar: {
+    width: 48,
+    height: 48,
     borderRadius: 24,
-    alignItems: 'center',
-    backgroundColor: '#111827',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
+    marginBottom: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
+
+  // Result badge (VICTORY / DEFEAT / DRAW pill)
   resultBadge: {
     paddingHorizontal: 24,
     paddingVertical: 8,
@@ -762,6 +388,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 2,
   },
+
+  // Players row
   playersRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -784,18 +412,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  miniAvatar: {
-    width: 20,
-    height: 20,
-    backgroundColor: '#334155',
-    borderRadius: 4,
-    marginLeft: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playerRating: { color: '#64748b', fontSize: 10, marginBottom: 10 },
   mainScore: { fontSize: 32, fontWeight: '700', color: '#fff' },
-
   vsBadge: {
     position: 'absolute',
     left: '50%',
@@ -813,21 +430,41 @@ const styles = StyleSheet.create({
   },
   vsText: { color: '#fff', fontWeight: '900', fontSize: 14 },
 
-  scoreDiffContainer: {
+  // Stats
+  statsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    backgroundColor: '#1E293B',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    marginTop: 10,
+    width: '100%',
   },
-  scoreDiffLabel: {
-    color: '#64748b',
-    fontSize: 11,
-    marginBottom: 4,
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
   },
-  scoreDiffValue: {
-    fontSize: 16,
+  statValue: {
+    color: '#fff',
+    fontSize: scaleFont(16),
     fontWeight: '700',
+    marginBottom: 2,
+  },
+  statLabel: {
+    color: '#64748b',
+    fontSize: scaleFont(10),
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: '#334155',
   },
 
-  messageContainer: { alignItems: 'center', marginBottom: 30 },
+  // Result title
   resultTitle: {
     fontSize: 22,
     fontWeight: '700',
@@ -835,42 +472,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  resultSubtitle: {
-    color: '#94a3b8',
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  durationText: { color: '#64748b', fontSize: 12 },
 
-  okButton: {
-    backgroundColor: '#f97316',
-    paddingVertical: 12,
-    paddingHorizontal: 50,
-    borderRadius: 25,
-    shadowColor: '#f97316',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  okButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  // ✅ REMATCH BUTTON STYLES
-  rematchBtn: {
-    width: '80%',
-    borderRadius: 30,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginTop: 12,
-    overflow: 'hidden',
-  },
-  rematchText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  // ✅ NEW MODAL STYLES
+  // New modal layout
   newModalContainer: {
     flex: 1,
     paddingTop: 50,

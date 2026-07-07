@@ -56,15 +56,15 @@ const Notification = () => {
 
   const sendTokenToServer = async fcmToken => {
     try {
-      const authToken = token || await AsyncStorage.getItem('authToken');
-      if (!authToken) return;
+      const accessToken = token || await AsyncStorage.getItem('accessToken');
+      if (!accessToken) return;
 
       await axios.patch(
-        'http://43.204.167.118:3000/api/auth/save-fcmToken',
+        'http://13.203.232.239:3000/api/auth/save-fcmToken',
         { fcmToken },
         {
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
         },

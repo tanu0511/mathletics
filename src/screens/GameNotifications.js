@@ -1,4 +1,505 @@
-import React, { useEffect, useState } from 'react';
+// import React, { useEffect, useState } from 'react';
+// import {
+//   View,
+//   Text,
+//   StyleSheet,
+//   TouchableOpacity,
+//   SafeAreaView,
+//   Dimensions,
+//   PixelRatio,
+//   ScrollView,
+//   ActivityIndicator,
+//   LayoutAnimation,
+//   Platform,
+//   UIManager,
+// } from 'react-native';
+// import Ionicons from 'react-native-vector-icons/Ionicons';
+// import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+// import { useNavigation } from '@react-navigation/native';
+// import LinearGradient from 'react-native-linear-gradient';
+// import { useTheme } from '../context/ThemeContext';
+// import AsyncStorage from '@react-native-async-storage/async-storage';
+// import axios from 'axios';
+// import Toast from 'react-native-toast-message';
+// import { useSocket } from '../context/Socket';
+
+// const { width, height } = Dimensions.get('window');
+// const scaleFont = size => size * PixelRatio.getFontScale();
+
+// if (Platform.OS === 'android') {
+//   if (UIManager.setLayoutAnimationEnabledExperimental) {
+//     UIManager.setLayoutAnimationEnabledExperimental(true);
+//   }
+// }
+
+// const GameNotifications = () => {
+//   const navigation = useNavigation();
+//   const { theme } = useTheme();
+//   const socket = useSocket();
+
+//   const [notifications, setNotifications] = useState([]); // Friend requests
+//   const [loading, setLoading] = useState(false);
+//   const [expandedId, setExpandedId] = useState(null);
+//   const [challengeNotifications, setChallengeNotifications] = useState([]); // Challenges
+//   const [inAppNotifications, setInAppNotifications] = useState([]);
+
+//   // 1. Fetch Friend Request Notifications
+//   const fetchNotifications = async () => {
+//     try {
+//       setLoading(true);
+//       const token = await AsyncStorage.getItem('accessToken');
+//       if (!token) return;
+
+//       const res = await axios.get(
+//         'http://13.203.232.239:3000/api/friend/friend-request',
+//         {
+//           headers: { Authorization: `Bearer ${token}` },
+//         },
+//       );
+
+//       if (res.data.success) {
+//         const mappedData = (res.data.requests || [])
+//           .filter(req => req.requester && req.requester._id)
+//           .map(req => ({
+//             id: `friend-${req.requester._id}`,
+//             user: req.requester.username || 'Unknown User',
+//             time: req.createdAt,
+//             type: 'friend_request',
+//             message: 'Has sent you a friend request.',
+//             fullMessage: `User ${req.requester.username || 'Unknown'
+//               } wants to be your friend.`,
+//             actions: ['Accept', 'Reject'],
+//             recipient: req.recipient,
+//             requesterId: req.requester._id,
+//           }));
+//         setNotifications(mappedData);
+//       }
+//     } catch (error) {
+//       console.log('Fetch Friend Notif Error:', error);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   // 2. Fetch In-App Notifications
+//   const fetchInAppNotifications = async () => {
+//     try {
+//       const res = await axios.get(
+//         'https://mataletics-backend.onrender.com/api/notifications/in-app',
+//       );
+
+//       if (res.data?.success) {
+//         const mapped = (res.data.data || []).map((item, index) => ({
+//           id: `inapp-${index}-${Date.now()}`,
+//           user: item.title,
+//           time: item.date,
+//           type: 'in_app',
+//           message: item.body,
+//           fullMessage: item.body,
+//           image: item.image,
+//           actions: [],
+//         }));
+
+//         setInAppNotifications(mapped);
+//       }
+//     } catch (e) {
+//       console.log('In-app notif error:', e);
+//     }
+//   };
+
+//   // ✅ 3. Listen for Challenge Notifications from Socket
+//   useEffect(() => {
+//   if (!socket) {
+//     console.log('❌ Socket not available for challenge notifications');
+//     return;
+//   }
+
+//   console.log('✅ Setting up challenge notification listener');
+
+//   // 🔥 REMOVE ALL OLD LISTENERS FIRST (VERY IMPORTANT)
+//   socket.off('challenge-received');
+
+//   const onChallengeReceived = data => {
+//     console.log('📩 Challenge notification received:', data);
+
+//     const newChallenge = {
+//       id: `challenge-${data.challengeId}`,
+//       user: data.challenger.username,
+//       time: new Date().toISOString(),
+//       type: 'challenge_received',
+//       message: 'Has challenged you to a game!',
+//       fullMessage: `${data.challenger.username} wants to play`,
+//       actions: ['Accept', 'Decline'],
+//       challengeData: data,
+//     };
+
+//     // 🔥 PREVENT DUPLICATE ADD
+//     setChallengeNotifications(prev => {
+//       const alreadyExists = prev.some(
+//         n => n.id === `challenge-${data.challengeId}`
+//       );
+
+//       if (alreadyExists) return prev; // ❌ skip duplicate
+
+//       return [newChallenge, ...prev];
+//     });
+
+//     Toast.show({
+//       type: 'info',
+//       text1: '🎮 Game Challenge!',
+//       text2: `${data.challenger.username} challenged you`,
+//       position: 'top',
+//       visibilityTime: 4000,
+//     });
+//   };
+
+//   socket.on('challenge-received', onChallengeReceived);
+
+//   return () => {
+//     console.log('🧹 Cleaning up challenge listener');
+//     socket.off('challenge-received');
+//   };
+// }, [socket]);
+//   // ✅ 4. Initial Data Fetch
+//   useEffect(() => {
+//     console.log('📱 GameNotifications mounted, fetching data...');
+//     fetchNotifications();
+//     fetchInAppNotifications();
+//   }, []);
+
+//   // Helper: Relative Time
+//   const getRelativeTime = isoString => {
+//     const now = new Date();
+//     const past = new Date(isoString);
+//     const diffInSeconds = Math.floor((now - past) / 1000);
+
+//     if (diffInSeconds < 60) return 'Just now';
+//     const diffInMinutes = Math.floor(diffInSeconds / 60);
+//     if (diffInMinutes < 60) return `${diffInMinutes} min ago`;
+//     const diffInHours = Math.floor(diffInMinutes / 60);
+//     if (diffInHours < 24) return `${diffInHours} hr ago`;
+//     const diffInDays = Math.floor(diffInHours / 24);
+//     if (diffInDays < 30) return `${diffInDays} d ago`;
+
+//     return past.toLocaleDateString();
+//   };
+
+//   // Handle Expand/Collapse
+//   const toggleExpand = id => {
+//     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+//     setExpandedId(prev => (prev === id ? null : id));
+//   };
+
+//   // ✅ Merge ALL notifications (Friend + Challenge + In-App)
+//   const allNotifications = [
+//     ...notifications,
+//     ...challengeNotifications,
+//     ...inAppNotifications,
+//   ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
+//   console.log('📊 Total notifications:', {
+//     friends: notifications.length,
+//     challenges: challengeNotifications.length,
+//     inApp: inAppNotifications.length,
+//     total: allNotifications.length,
+//   });
+
+//   // Handle Actions
+//   const handleAction = async (notification, actionType) => {
+//     console.log(
+//       '🎬 Action triggered:',
+//       actionType,
+//       'for type:',
+//       notification.type,
+//     );
+
+//     // ✅ Handle FRIEND REQUESTS
+//     if (notification.type === 'friend_request') {
+//       try {
+//         const token = await AsyncStorage.getItem('accessToken');
+//         const url =
+//           actionType === 'Accept'
+//             ? 'http://13.203.232.239:3000/api/friend/accept-friend'
+//             : 'http://13.203.232.239:3000/api/friend/reject-friend';
+
+//         // Optimistic UI update
+//         setNotifications(prev => prev.filter(n => n.id !== notification.id));
+
+//         await axios.post(
+//           url,
+//           {
+//             requester: notification.requesterId,
+//             recipient: notification.recipient,
+//           },
+//           { headers: { Authorization: `Bearer ${token}` } },
+//         );
+
+//         Toast.show({
+//           type: 'success',
+//           text1: `Friend Request ${actionType}ed`,
+//         });
+//       } catch (error) {
+//         console.error('Friend request action error:', error);
+//         Toast.show({ type: 'error', text1: 'Action Failed' });
+//         fetchNotifications();
+//       }
+//     }
+
+//     // ✅ Handle GAME CHALLENGES
+//     if (notification.type === 'challenge_received') {
+//       if (!socket || !socket.connected) {
+//         Toast.show({ type: 'error', text1: 'Connection error' });
+//         return;
+//       }
+
+//       // Optimistic UI update - remove notification immediately
+//       setChallengeNotifications(prev =>
+//         prev.filter(n => n.id !== notification.id),
+//       );
+
+//       if (actionType === 'Accept') {
+//         console.log(
+//           '✅ Accepting challenge:',
+//           notification.challengeData.challengeId,
+//         );
+
+//         socket.emit('accept-challenge', {
+//           challengeId: notification.challengeData.challengeId,
+//         });
+
+//         // Listen for challenge accepted confirmation
+//         const handleChallengeAccepted = data => {
+//           console.log('✅ Challenge accepted response:', data);
+
+//           Toast.show({
+//             type: 'success',
+//             text1: 'Challenge Accepted!',
+//             text2: 'Starting game...',
+//           });
+
+//           // Navigate to game
+//           setTimeout(() => {
+//             navigation.navigate('PlayGame', {
+//               gameRoom: data.gameRoom,
+//               opponent: data.opponent,
+//               myPlayerId: data.myPlayerId,
+//               initialQuestionMeter: data.initialQuestionMeter,
+//             });
+//           }, 500);
+//         };
+
+//        // remove old first
+// socket.off('challenge-accepted');
+// socket.off('game-started');
+
+// socket.once('challenge-accepted', handleChallengeAccepted);
+
+// socket.once('game-started', data => {
+//   console.log('🎮 Game started event');
+// });
+//       } else if (actionType === 'Decline') {
+//         console.log(
+//           '❌ Declining challenge:',
+//           notification.challengeData.challengeId,
+//         );
+
+//         socket.emit('decline-challenge', {
+//           challengeId: notification.challengeData.challengeId,
+//         });
+
+//         Toast.show({
+//           type: 'info',
+//           text1: 'Challenge Declined',
+//         });
+//       }
+//     }
+//   };
+
+//   // ---------- COMPONENTS ----------
+
+//   const ActionButton = ({ type, action, notification }) => {
+//     if (type === 'friend_request') {
+//       const isAccept = action === 'Accept';
+//       return (
+//         <TouchableOpacity
+//           onPress={() => handleAction(notification, action)}
+//           style={styles.actionIconWrapper}>
+//           <MaterialCommunityIcons
+//             name={isAccept ? 'check-circle' : 'close-circle'}
+//             size={scaleFont(30)}
+//             color={isAccept ? '#10B981' : '#EF4444'}
+//           />
+//         </TouchableOpacity>
+//       );
+//     }
+
+//     if (type === 'challenge_received') {
+//       const isAccept = action === 'Accept';
+//       return (
+//         <TouchableOpacity
+//           onPress={() => handleAction(notification, action)}
+//           style={[
+//             styles.challengeActionButton,
+//             isAccept ? styles.acceptButton : styles.declineButton,
+//           ]}>
+//           <Text style={styles.challengeActionText}>{action}</Text>
+//         </TouchableOpacity>
+//       );
+//     }
+
+//     return null;
+//   };
+
+//   const NotificationCard = ({ data }) => {
+//     const isExpanded = expandedId === data.id;
+
+//     return (
+//       <TouchableOpacity
+//         activeOpacity={0.9}
+//         onPress={() => toggleExpand(data.id)}
+//         style={[
+//           styles.notificationCard,
+//           {
+//             backgroundColor: theme.cardBackground || '#1E293B',
+//             borderColor: theme.borderColor || '#334155',
+//           },
+//           data.type === 'challenge_received' && styles.challengeCard,
+//         ]}>
+//         {/* Header */}
+//         <View style={styles.cardHeader}>
+//           <View style={styles.userSection}>
+//             {data.type === 'challenge_received' && (
+//               <Text style={styles.challengeBadge}>🎮</Text>
+//             )}
+//             {data.type === 'friend_request' && (
+//               <Text style={styles.challengeBadge}>👥</Text>
+//             )}
+//             <Text style={[styles.username, { color: theme.text }]}>
+//               {data.user}
+//             </Text>
+//           </View>
+//           <View style={styles.headerRight}>
+//             <Text style={[styles.time, { color: theme.subText || '#94A3B8' }]}>
+//               {getRelativeTime(data.time)}
+//             </Text>
+//             <MaterialCommunityIcons
+//               name={isExpanded ? 'chevron-up' : 'chevron-down'}
+//               size={scaleFont(20)}
+//               color={theme.text}
+//             />
+//           </View>
+//         </View>
+
+//         {/* Body */}
+//         <View style={styles.cardBody}>
+//           <Text style={[styles.message, { color: theme.text }]}>
+//             {data.message}
+//           </Text>
+
+//           {/* Action Buttons */}
+//           {data.actions && data.actions.length > 0 && (
+//             <View style={styles.actionsRow}>
+//               {data.actions.map((act, idx) => (
+//                 <ActionButton
+//                   key={idx}
+//                   type={data.type}
+//                   action={act}
+//                   notification={data}
+//                 />
+//               ))}
+//             </View>
+//           )}
+//         </View>
+
+//         {/* Expanded Content */}
+//         {isExpanded && (
+//           <View style={styles.expandedContent}>
+//             <Text style={[styles.detailText, { color: theme.subText || '#ccc' }]}>
+//               {data.fullMessage}
+//             </Text>
+//           </View>
+//         )}
+//       </TouchableOpacity>
+//     );
+//   };
+
+//   const Content = () => (
+//     <SafeAreaView style={styles.container}>
+//       {/* Header */}
+//       <View style={styles.header}>
+//         <TouchableOpacity
+//           onPress={() => navigation.goBack()}
+//           style={styles.backButton}>
+//           <Ionicons
+//             name="caret-back-outline"
+//             size={scaleFont(28)}
+//             color={theme.text || 'black'}
+//           />
+//         </TouchableOpacity>
+//         <Text style={[styles.headerTitle, { color: theme.text || 'black' }]}>
+//           NOTIFICATIONS
+//         </Text>
+//         <View style={styles.rightPlaceholder} />
+//       </View>
+//       <View style={styles.headerSeparator} />
+
+//       {/* Notification Count Badge */}
+//       {allNotifications.length > 0 && (
+//         <View style={styles.countBadge}>
+//           <Text style={styles.countText}>
+//             {allNotifications.length} Notification
+//             {allNotifications.length !== 1 ? 's' : ''}
+//           </Text>
+//         </View>
+//       )}
+
+//       {/* List */}
+//       {loading ? (
+//         <ActivityIndicator
+//           size="large"
+//           color={theme.primary}
+//           style={{ marginTop: 50 }}
+//         />
+//       ) : (
+//         <ScrollView
+//           showsVerticalScrollIndicator={false}
+//           style={styles.notificationsList}>
+//           {allNotifications.length === 0 ? (
+//             <View style={styles.emptyContainer}>
+//               <Text style={styles.emptyIcon}>🔔</Text>
+//               <Text style={[styles.emptyText, { color: theme.subText }]}>
+//                 No new notifications
+//               </Text>
+//               <Text style={[styles.emptySubtext, { color: theme.subText }]}>
+//                 You're all caught up!
+//               </Text>
+//             </View>
+//           ) : (
+//             allNotifications.map(n => <NotificationCard key={n.id} data={n} />)
+//           )}
+//           <View style={{ height: 30 }} />
+//         </ScrollView>
+//       )}
+//       <Toast />
+//     </SafeAreaView>
+//   );
+
+//   return theme.backgroundGradient ? (
+//     <LinearGradient colors={theme.backgroundGradient} style={{ flex: 1 }}>
+//       <Content />
+//     </LinearGradient>
+//   ) : (
+//     <View
+//       style={{ flex: 1, backgroundColor: theme.backgroundColor || '#f4f4f4' }}>
+//       <Content />
+//     </View>
+//   );
+// };
+
+// export default GameNotifications;
+
+
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -43,15 +544,20 @@ const GameNotifications = () => {
   const [challengeNotifications, setChallengeNotifications] = useState([]); // Challenges
   const [inAppNotifications, setInAppNotifications] = useState([]);
 
+  // 🔥 Refs to hold the CURRENT accept-flow handlers so we can remove
+  // exactly those handlers (and nothing else) on cleanup / re-attach.
+  const acceptedHandlerRef = useRef(null);
+  const gameStartedHandlerRef = useRef(null);
+
   // 1. Fetch Friend Request Notifications
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('authToken');
+      const token = await AsyncStorage.getItem('accessToken');
       if (!token) return;
 
       const res = await axios.get(
-        'http://43.204.167.118:3000/api/friend/friend-request',
+        'http://13.203.232.239:3000/api/friend/friend-request',
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -108,6 +614,9 @@ const GameNotifications = () => {
   };
 
   // ✅ 3. Listen for Challenge Notifications from Socket
+  // 🔥 FIX: never call socket.off(event) with no handler — that strips
+  // ALL listeners for that event app-wide (including ChallengeContext's
+  // global listener). Always pass the exact handler reference.
   useEffect(() => {
     if (!socket) {
       console.log('❌ Socket not available for challenge notifications');
@@ -125,20 +634,22 @@ const GameNotifications = () => {
         time: new Date().toISOString(),
         type: 'challenge_received',
         message: 'Has challenged you to a game!',
-        fullMessage: `${data.challenger.username
-          } wants to play: ${data.gameSettings.diff.toUpperCase()} difficulty, ${data.gameSettings.timer
-          }s timer`,
+        fullMessage: `${data.challenger.username} wants to play`,
         actions: ['Accept', 'Decline'],
         challengeData: data,
       };
 
-      // ✅ Add to challenge notifications state
+      // 🔥 PREVENT DUPLICATE ADD
       setChallengeNotifications(prev => {
-        console.log('Adding challenge to notifications list');
+        const alreadyExists = prev.some(
+          n => n.id === `challenge-${data.challengeId}`,
+        );
+
+        if (alreadyExists) return prev; // ❌ skip duplicate
+
         return [newChallenge, ...prev];
       });
 
-      // ✅ Show toast notification
       Toast.show({
         type: 'info',
         text1: '🎮 Game Challenge!',
@@ -162,6 +673,22 @@ const GameNotifications = () => {
     fetchNotifications();
     fetchInAppNotifications();
   }, []);
+
+  // 🔥 Cleanup any leftover accept-flow listeners when this screen unmounts,
+  // using the SAME refs that were attached — never a bare event-name off().
+  useEffect(() => {
+    return () => {
+      if (!socket) return;
+      if (acceptedHandlerRef.current) {
+        socket.off('challenge-accepted', acceptedHandlerRef.current);
+        acceptedHandlerRef.current = null;
+      }
+      if (gameStartedHandlerRef.current) {
+        socket.off('game-started', gameStartedHandlerRef.current);
+        gameStartedHandlerRef.current = null;
+      }
+    };
+  }, [socket]);
 
   // Helper: Relative Time
   const getRelativeTime = isoString => {
@@ -212,11 +739,11 @@ const GameNotifications = () => {
     // ✅ Handle FRIEND REQUESTS
     if (notification.type === 'friend_request') {
       try {
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await AsyncStorage.getItem('accessToken');
         const url =
           actionType === 'Accept'
-            ? 'http://43.204.167.118:3000/api/friend/accept-friend'
-            : 'http://43.204.167.118:3000/api/friend/reject-friend';
+            ? 'http://13.203.232.239:3000/api/friend/accept-friend'
+            : 'http://13.203.232.239:3000/api/friend/reject-friend';
 
         // Optimistic UI update
         setNotifications(prev => prev.filter(n => n.id !== notification.id));
@@ -263,7 +790,16 @@ const GameNotifications = () => {
           challengeId: notification.challengeData.challengeId,
         });
 
-        // Listen for challenge accepted confirmation
+        // 🔥 Remove only OUR previous accept-flow handlers (by ref),
+        // never a bare socket.off(event) — that would strip every
+        // other listener registered on this event app-wide.
+        if (acceptedHandlerRef.current) {
+          socket.off('challenge-accepted', acceptedHandlerRef.current);
+        }
+        if (gameStartedHandlerRef.current) {
+          socket.off('game-started', gameStartedHandlerRef.current);
+        }
+
         const handleChallengeAccepted = data => {
           console.log('✅ Challenge accepted response:', data);
 
@@ -284,12 +820,15 @@ const GameNotifications = () => {
           }, 500);
         };
 
-        socket.once('challenge-accepted', handleChallengeAccepted);
-
-        // Backup listener for game-started
-        socket.once('game-started', data => {
+        const handleGameStarted = data => {
           console.log('🎮 Game started event');
-        });
+        };
+
+        acceptedHandlerRef.current = handleChallengeAccepted;
+        gameStartedHandlerRef.current = handleGameStarted;
+
+        socket.once('challenge-accepted', handleChallengeAccepted);
+        socket.once('game-started', handleGameStarted);
       } else if (actionType === 'Decline') {
         console.log(
           '❌ Declining challenge:',

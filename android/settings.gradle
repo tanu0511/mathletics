@@ -1,6 +1,16 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    // Use absolute paths so Gradle evaluation CWD doesn't break autolinking.
+    def cliFile = file("../node_modules/@react-native-community/cli/build/bin.js").absolutePath
+    ex.autolinkLibrariesFromCommand([
+            "node",
+            cliFile,
+            "config",
+            "--platform",
+            "android"
+    ])
+}
 rootProject.name = 'MathSolvingApplication'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')

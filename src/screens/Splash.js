@@ -21,7 +21,7 @@ export default function SplashScreen() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await AsyncStorage.getItem('accessToken');
         const firstLaunch = await AsyncStorage.getItem('firstLaunch');
         const remoteMessage = await messaging().getInitialNotification();
 
